@@ -84,15 +84,17 @@ export class Tree {
                 style = `padding-left: ${(item.depth - 1) * 18 + 22}px;margin-right: 2px`;
             }
             const showArrow = hasChild || (item.type === "backlink" && !isMobile());
+            // data-id 需要添加 item.id，否则大纲更新时 name 不一致导致 https://github.com/siyuan-note/siyuan/issues/11843
             html += `<li class="b3-list-item${isMobile() ? "" : " b3-list-item--hide-action"}" 
 ${item.id ? 'data-node-id="' + item.id + '"' : ""} 
 ${item.box ? 'data-notebook-id="' + item.box + '"' : ""} 
+style="--file-toggle-width:${(item.depth - 1) * 18 + 38}px" 
 data-treetype="${item.type}" 
 data-type="${item.nodeType}" 
 data-subtype="${item.subType}" 
 ${item.label ? "data-label='" + item.label + "'" : ""}>
     <span style="${style}" class="b3-list-item__toggle${showArrow ? " b3-list-item__toggle--hl" : ""}${showArrow ? "" : " fn__hidden"}">
-        <svg data-id="${encodeURIComponent(item.name + item.depth)}" class="b3-list-item__arrow${hasChild ? " b3-list-item__arrow--open" : ""}"><use xlink:href="#iconRight"></use></svg>
+        <svg data-id="${item.id || encodeURIComponent(item.name + item.depth)}" class="b3-list-item__arrow${hasChild ? " b3-list-item__arrow--open" : ""}"><use xlink:href="#iconRight"></use></svg>
     </span>
     ${iconHTML}
     <span class="b3-list-item__text ariaLabel" data-position="parentE"${titleTip}>${item.name}</span>
@@ -141,6 +143,7 @@ ${item.label ? "data-label='" + item.label + "'" : ""}>
                 style = `padding-left: ${(item.depth - 1) * 18 + 22}px;margin-right: 2px`;
             }
             html += `<li class="b3-list-item${isMobile() ? "" : " b3-list-item--hide-action"}"  
+style="--file-toggle-width:${(item.depth - 1) * 18 + 38}px" 
 data-node-id="${item.id}" 
 data-ref-text="${encodeURIComponent(item.refText)}" 
 data-def-id="${item.defID}" 

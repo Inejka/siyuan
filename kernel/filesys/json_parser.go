@@ -30,12 +30,13 @@ import (
 func ParseJSONWithoutFix(jsonData []byte, options *parse.Options) (ret *parse.Tree, err error) {
 	root := &ast.Node{}
 	err = unmarshalJSON(jsonData, root)
-	if nil != err {
+	if err != nil {
 		return
 	}
 
 	ret = &parse.Tree{Name: "", ID: root.ID, Root: &ast.Node{Type: ast.NodeDocument, ID: root.ID, Spec: root.Spec}, Context: &parse.Context{ParseOption: options}}
 	ret.Root.KramdownIAL = parse.Map2IAL(root.Properties)
+	ret.Root.SetIALAttr("type", "doc")
 	ret.Context.Tip = ret.Root
 	if nil == root.Children {
 		return
@@ -51,12 +52,13 @@ func ParseJSONWithoutFix(jsonData []byte, options *parse.Options) (ret *parse.Tr
 func ParseJSON(jsonData []byte, options *parse.Options) (ret *parse.Tree, needFix bool, err error) {
 	root := &ast.Node{}
 	err = unmarshalJSON(jsonData, root)
-	if nil != err {
+	if err != nil {
 		return
 	}
 
 	ret = &parse.Tree{Name: "", ID: root.ID, Root: &ast.Node{Type: ast.NodeDocument, ID: root.ID, Spec: root.Spec}, Context: &parse.Context{ParseOption: options}}
 	ret.Root.KramdownIAL = parse.Map2IAL(root.Properties)
+	ret.Root.SetIALAttr("type", "doc")
 	for _, kv := range ret.Root.KramdownIAL {
 		if strings.Contains(kv[1], "\n") {
 			val := kv[1]
@@ -142,6 +144,21 @@ func genTreeByJSON(node *ast.Node, tree *parse.Tree, idMap *map[string]bool, nee
 				*needFix = true
 				return // 忽略空查询嵌入块
 			}
+		case ast.NodeCodeBlock:
+			if 4 > len(node.Children) {
+				// https://ld246.com/article/1713689223067
+				existCode := false
+				for _, child := range node.Children {
+					if ast.NodeCodeBlockCode.String() == child.TypeStr {
+						existCode = true
+						break
+					}
+				}
+				if !existCode {
+					*needFix = true
+					return // 忽略空代码块
+				}
+			}
 		}
 
 		fixLegacyData(tree.Context.Tip, node, idMap, needFix, needMigrate2Spec1)
@@ -166,19 +183,17 @@ func fixLegacyData(tip, node *ast.Node, idMap *map[string]bool, needFix, needMig
 			node.SetIALAttr("id", node.ID)
 			*needFix = true
 		}
+
+		if node.ID != node.IALAttr("id") {
+			//某些情况下会导致 ID 和属性 id 不相同 https://ld246.com/article/1722826829447
+			node.SetIALAttr("id", node.ID)
+			*needFix = true
+		}
+
 		if 0 < len(node.Children) && ast.NodeBr.String() == node.Children[len(node.Children)-1].TypeStr {
 			// 剔除块尾多余的软换行 https://github.com/siyuan-note/siyuan/issues/6191
 			node.Children = node.Children[:len(node.Children)-1]
 			*needFix = true
-		}
-
-		for _, kv := range node.KramdownIAL {
-			if strings.Contains(kv[0], "custom-av-key-") {
-				// TODO: 数据库正式上线以后移除这里的修复
-				// 删除数据库属性键值对 https://github.com/siyuan-note/siyuan/issues/9293
-				node.RemoveIALAttr(kv[0])
-				*needFix = true
-			}
 		}
 	}
 	if "" != node.ID {

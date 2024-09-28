@@ -26,6 +26,40 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
+func listInvalidBlockRefs(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	page := 1
+	if nil != arg["page"] {
+		page = int(arg["page"].(float64))
+	}
+	if 0 >= page {
+		page = 1
+	}
+
+	pageSize := 32
+	if nil != arg["pageSize"] {
+		pageSize = int(arg["pageSize"].(float64))
+	}
+	if 0 >= pageSize {
+		pageSize = 32
+	}
+
+	blocks, matchedBlockCount, matchedRootCount, pageCount := model.ListInvalidBlockRefs(page, pageSize)
+	ret.Data = map[string]interface{}{
+		"blocks":            blocks,
+		"matchedBlockCount": matchedBlockCount,
+		"matchedRootCount":  matchedRootCount,
+		"pageCount":         pageCount,
+	}
+}
+
 func getAssetContent(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
@@ -98,7 +132,7 @@ func findReplace(c *gin.Context) {
 	}
 
 	err := model.FindReplace(k, r, replaceTypes, ids, paths, boxes, types, method, orderBy, groupBy)
-	if nil != err {
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 5000}
@@ -177,7 +211,7 @@ func removeTemplate(c *gin.Context) {
 
 	path := arg["path"].(string)
 	err := model.RemoveTemplate(path)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -247,7 +281,7 @@ func updateEmbedBlock(c *gin.Context) {
 	content := arg["content"].(string)
 
 	err := model.UpdateEmbedBlock(id, content)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -307,11 +341,16 @@ func searchRefBlock(c *gin.Context) {
 		isSquareBrackets = isSquareBracketsArg.(bool)
 	}
 
+	isDatabase := false
+	if isDatabaseArg := arg["isDatabase"]; nil != isDatabaseArg {
+		isDatabase = isDatabaseArg.(bool)
+	}
+
 	rootID := arg["rootID"].(string)
 	id := arg["id"].(string)
 	keyword := arg["k"].(string)
 	beforeLen := int(arg["beforeLen"].(float64))
-	blocks, newDoc := model.SearchRefBlock(id, rootID, keyword, beforeLen, isSquareBrackets)
+	blocks, newDoc := model.SearchRefBlock(id, rootID, keyword, beforeLen, isSquareBrackets, isDatabase)
 	ret.Data = map[string]interface{}{
 		"blocks": blocks,
 		"newDoc": newDoc,

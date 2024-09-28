@@ -6,15 +6,22 @@ import {isMac} from "../util/compatibility";
 import {setInlineStyle} from "../../util/assets";
 import {fetchPost} from "../../util/fetch";
 import {lineNumberRender} from "../render/highlightRender";
+import {hideMessage, showMessage} from "../../dialog/message";
+import {genUUID} from "../../util/genID";
+import {getContenteditableElement, getLastBlock} from "../wysiwyg/getBlock";
+import {genEmptyElement} from "../../block/util";
+import {transaction} from "../wysiwyg/transaction";
+import {focusByRange} from "../util/selection";
 
 export const initUI = (protyle: IProtyle) => {
     protyle.contentElement = document.createElement("div");
     protyle.contentElement.className = "protyle-content";
+    protyle.contentElement.innerHTML = '<div class="protyle-top"></div>';
     if (protyle.options.render.background) {
-        protyle.contentElement.appendChild(protyle.background.element);
+        protyle.contentElement.firstElementChild.appendChild(protyle.background.element);
     }
     if (protyle.options.render.title) {
-        protyle.contentElement.appendChild(protyle.title.element);
+        protyle.contentElement.firstElementChild.appendChild(protyle.title.element);
     }
     protyle.contentElement.appendChild(protyle.wysiwyg.element);
     if (!protyle.options.action.includes(Constants.CB_GET_HISTORY)) {
@@ -47,6 +54,7 @@ export const initUI = (protyle: IProtyle) => {
     document.execCommand("DefaultParagraphSeparator", false, "p");
 
     let wheelTimeout: number;
+    const wheelId = genUUID();
     const isMacOS = isMac();
     protyle.contentElement.addEventListener("mousewheel", (event: WheelEvent) => {
         if (!window.siyuan.config.editor.fontSizeScrollZoom || (isMacOS && !event.metaKey) || (!isMacOS && !event.ctrlKey) || event.deltaX !== 0) {
@@ -69,15 +77,66 @@ export const initUI = (protyle: IProtyle) => {
         }
         setInlineStyle();
         clearTimeout(wheelTimeout);
+        showMessage(`${window.siyuan.languages.fontSize} ${window.siyuan.config.editor.fontSize}px<span class="fn__space"></span>
+<button class="b3-button b3-button--small b3-button--white">${window.siyuan.languages.reset} 16px</button>`, undefined, undefined, wheelId);
         wheelTimeout = window.setTimeout(() => {
             fetchPost("/api/setting/setEditor", window.siyuan.config.editor);
-            if (window.siyuan.config.editor.codeSyntaxHighlightLineNum) {
-                protyle.wysiwyg.element.querySelectorAll(".code-block .protyle-linenumber").forEach((block: HTMLElement) => {
-                    lineNumberRender(block);
+            protyle.wysiwyg.element.querySelectorAll(".code-block .protyle-linenumber__rows").forEach((block: HTMLElement) => {
+                lineNumberRender(block.parentElement);
+            });
+            document.querySelector(`#message [data-id="${wheelId}"] button`)?.addEventListener("click", () => {
+                window.siyuan.config.editor.fontSize = 16;
+                setInlineStyle();
+                fetchPost("/api/setting/setEditor", window.siyuan.config.editor);
+                hideMessage(wheelId);
+                protyle.wysiwyg.element.querySelectorAll(".code-block .protyle-linenumber__rows").forEach((block: HTMLElement) => {
+                    lineNumberRender(block.parentElement);
                 });
-            }
+            });
         }, Constants.TIMEOUT_LOAD);
     }, {passive: false});
+    protyle.contentElement.addEventListener("click", (event: MouseEvent & { target: HTMLElement }) => {
+        // wysiwyg 元素下方点击无效果 https://github.com/siyuan-note/siyuan/issues/12009
+        if (protyle.disabled ||
+            (!event.target.classList.contains("protyle-content") && !event.target.classList.contains("protyle-wysiwyg"))) {
+            return;
+        }
+        const lastRect = protyle.wysiwyg.element.lastElementChild.getBoundingClientRect();
+        const range = document.createRange();
+        if (event.y > lastRect.bottom) {
+            const lastEditElement = getContenteditableElement(getLastBlock(protyle.wysiwyg.element.lastElementChild));
+            if (!lastEditElement ||
+                (protyle.wysiwyg.element.lastElementChild.getAttribute("data-type") !== "NodeParagraph" && protyle.wysiwyg.element.getAttribute("data-doc-type") !== "NodeListItem") ||
+                (protyle.wysiwyg.element.lastElementChild.getAttribute("data-type") === "NodeParagraph" && getContenteditableElement(lastEditElement).innerHTML !== "")) {
+                const emptyElement = genEmptyElement(false, false);
+                protyle.wysiwyg.element.insertAdjacentElement("beforeend", emptyElement);
+                transaction(protyle, [{
+                    action: "insert",
+                    data: emptyElement.outerHTML,
+                    id: emptyElement.getAttribute("data-node-id"),
+                    previousID: emptyElement.previousElementSibling.getAttribute("data-node-id"),
+                    parentID: protyle.block.parentID
+                }], [{
+                    action: "delete",
+                    id: emptyElement.getAttribute("data-node-id")
+                }]);
+                const emptyEditElement = getContenteditableElement(emptyElement) as HTMLInputElement;
+                range.selectNodeContents(emptyEditElement);
+                range.collapse(true);
+                focusByRange(range);
+                // 需等待 range 更新再次进行渲染
+                if (protyle.options.render.breadcrumb) {
+                    setTimeout(() => {
+                        protyle.breadcrumb.render(protyle);
+                    }, Constants.TIMEOUT_TRANSITION);
+                }
+            } else if (lastEditElement) {
+                range.selectNodeContents(lastEditElement);
+                range.collapse(false);
+                focusByRange(range);
+            }
+        }
+    });
 };
 
 export const addLoading = (protyle: IProtyle, msg?: string) => {
@@ -107,8 +166,50 @@ export const setPadding = (protyle: IProtyle) => {
         };
     }
     const oldLeft = parseInt(protyle.wysiwyg.element.style.paddingLeft);
-    let left = 16;
-    let right = 24;
+    const padding = getPadding(protyle);
+    const left = padding.left;
+    const right = padding.right;
+    if (protyle.options.backlinkData) {
+        protyle.wysiwyg.element.style.padding = `4px ${right}px 4px ${left}px`;
+    } else {
+        protyle.wysiwyg.element.style.padding = `${padding.top}px ${right}px ${padding.bottom}px ${left}px`;
+    }
+    if (protyle.options.render.background) {
+        protyle.background.element.querySelector(".protyle-background__ia").setAttribute("style", `margin-left:${left}px;margin-right:${right}px`);
+    }
+    if (protyle.options.render.title) {
+        /// #if MOBILE
+        protyle.title.element.style.margin = `16px ${right}px 0 ${left}px`;
+        /// #else
+        protyle.title.element.style.margin = `5px ${right}px 0 ${left}px`;
+        /// #endif
+    }
+    if (window.siyuan.config.editor.displayBookmarkIcon) {
+        const editorAttrElement = document.getElementById("editorAttr");
+        if (editorAttrElement) {
+            editorAttrElement.innerHTML = `.protyle-wysiwyg--attr .b3-tooltips:after { max-width: ${protyle.wysiwyg.element.clientWidth - left - right}px; }`;
+        }
+    }
+    const oldWidth = protyle.wysiwyg.element.getAttribute("data-realwidth");
+    const newWidth = protyle.wysiwyg.element.clientWidth - parseInt(protyle.wysiwyg.element.style.paddingLeft) - parseInt(protyle.wysiwyg.element.style.paddingRight);
+    protyle.wysiwyg.element.setAttribute("data-realwidth", newWidth.toString());
+    return {
+        width: Math.abs(parseInt(oldWidth) - newWidth),
+        padding: Math.abs(oldLeft - parseInt(protyle.wysiwyg.element.style.paddingLeft))
+    };
+};
+
+export const getPadding = (protyle: IProtyle) => {
+    let right = 16;
+    let left = 24;
+    let bottom = 16;
+    if (protyle.options.typewriterMode) {
+        if (isMobile()) {
+            bottom = window.innerHeight / 5;
+        } else {
+            bottom = protyle.element.clientHeight / 2;
+        }
+    }
     if (!isMobile()) {
         let isFullWidth = protyle.wysiwyg.element.getAttribute(Constants.CUSTOM_SY_FULLWIDTH);
         if (!isFullWidth) {
@@ -128,37 +229,7 @@ export const setPadding = (protyle: IProtyle) => {
             right = 96;
         }
     }
-    let bottomHeight = "16px";
-    if (protyle.options.typewriterMode) {
-        if (isMobile()) {
-            bottomHeight = window.innerHeight / 5 + "px";
-        } else {
-            bottomHeight = protyle.element.clientHeight / 2 + "px";
-        }
-    }
-    if (protyle.options.backlinkData) {
-        protyle.wysiwyg.element.style.padding = `4px ${left}px 4px ${right}px`;
-    } else {
-        protyle.wysiwyg.element.style.padding = `16px ${left}px ${bottomHeight} ${right}px`;
-    }
-    if (protyle.options.render.background) {
-        protyle.background.element.lastElementChild.setAttribute("style", `left:${left}px`);
-        protyle.background.element.querySelector(".protyle-background__img .protyle-icons").setAttribute("style", `right:${left}px`);
-    }
-    if (protyle.options.render.title) {
-        protyle.title.element.style.margin = `16px ${left}px 0 ${right}px`;
-    }
-    if (window.siyuan.config.editor.displayBookmarkIcon) {
-        const editorAttrElement = document.getElementById("editorAttr");
-        if (editorAttrElement) {
-            editorAttrElement.innerHTML = `.protyle-wysiwyg--attr .b3-tooltips:after { max-width: ${protyle.wysiwyg.element.clientWidth - left - right}px; }`;
-        }
-    }
-    const oldWidth = protyle.wysiwyg.element.getAttribute("data-realwidth");
-    const newWidth = protyle.wysiwyg.element.clientWidth - parseInt(protyle.wysiwyg.element.style.paddingLeft) - parseInt(protyle.wysiwyg.element.style.paddingRight);
-    protyle.wysiwyg.element.setAttribute("data-realwidth", newWidth.toString());
     return {
-        width: Math.abs(parseInt(oldWidth) - newWidth),
-        padding: Math.abs(oldLeft - parseInt(protyle.wysiwyg.element.style.paddingLeft))
+        left, right, bottom, top: 16
     };
 };

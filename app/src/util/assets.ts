@@ -9,7 +9,7 @@ import {fetchPost} from "./fetch";
 import {appearance} from "../config/appearance";
 import {isInAndroid, isInIOS} from "../protyle/util/compatibility";
 
-const loadThirdIcon = (iconURL: string, data: IAppearance) => {
+const loadThirdIcon = (iconURL: string, data: Config.IAppearance) => {
     addScript(iconURL, "iconDefaultScript").then(() => {
         if (!["ant", "material"].includes(data.icon)) {
             const iconScriptElement = document.getElementById("iconScript");
@@ -21,7 +21,7 @@ const loadThirdIcon = (iconURL: string, data: IAppearance) => {
     });
 };
 
-export const loadAssets = (data: IAppearance) => {
+export const loadAssets = (data: Config.IAppearance) => {
     const htmlElement = document.getElementsByTagName("html")[0];
     htmlElement.setAttribute("lang", window.siyuan.config.appearance.lang);
     htmlElement.setAttribute("data-theme-mode", getThemeMode());
@@ -40,8 +40,7 @@ export const loadAssets = (data: IAppearance) => {
     const defaultThemeAddress = `/appearance/themes/${data.mode === 1 ? "midnight" : "daylight"}/theme.css?v=${Constants.SIYUAN_VERSION}`;
     if (defaultStyleElement) {
         if (!defaultStyleElement.getAttribute("href").startsWith(defaultThemeAddress)) {
-            defaultStyleElement.remove();
-            addStyle(defaultThemeAddress, "themeDefaultStyle");
+            defaultStyleElement.setAttribute("href", defaultThemeAddress);
         }
     } else {
         addStyle(defaultThemeAddress, "themeDefaultStyle");
@@ -51,8 +50,7 @@ export const loadAssets = (data: IAppearance) => {
         const themeAddress = `/appearance/themes/${data.mode === 1 ? data.themeDark : data.themeLight}/theme.css?v=${data.themeVer}`;
         if (styleElement) {
             if (!styleElement.getAttribute("href").startsWith(themeAddress)) {
-                styleElement.remove();
-                addStyle(themeAddress, "themeStyle");
+                styleElement.setAttribute("href", themeAddress);
             }
         } else {
             addStyle(themeAddress, "themeStyle");
@@ -211,7 +209,13 @@ export const setInlineStyle = (set = true) => {
 .protyle-wysiwyg [data-node-id].li > .protyle-action svg {height: ${Math.max(14, window.siyuan.config.editor.fontSize - 8)}px}
 .protyle-wysiwyg [data-node-id].li:before {height: calc(100% - ${height + 8}px);top:${(height + 8)}px}
 .protyle-wysiwyg [data-node-id] [spellcheck] {min-height:${height}px;}
-.protyle-wysiwyg [data-node-id] {${window.siyuan.config.editor.rtl ? " direction: rtl;" : ""}${window.siyuan.config.editor.justify ? " text-align: justify;" : ""}}
+.protyle-wysiwyg .p,
+.protyle-wysiwyg .code-block .hljs,
+.protyle-wysiwyg .table,
+.protyle-wysiwyg .render-node protyle-html,
+.protyle-wysiwyg .render-node > div[spin="1"],
+.protyle-wysiwyg [data-type="NodeHeading"] {${window.siyuan.config.editor.rtl ? " direction: rtl;" : ""}}
+.protyle-wysiwyg [data-node-id] {${window.siyuan.config.editor.justify ? " text-align: justify;" : ""}}
 .protyle-wysiwyg .li {min-height:${height + 8}px}
 .protyle-gutters button svg {height:${height}px}`;
     if (window.siyuan.config.editor.fontFamily) {

@@ -43,8 +43,9 @@ func exportAttributeView(c *gin.Context) {
 	}
 
 	avID := arg["id"].(string)
-	zipPath, err := model.ExportAv2CSV(avID)
-	if nil != err {
+	blockID := arg["blockID"].(string)
+	zipPath, err := model.ExportAv2CSV(avID, blockID)
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
@@ -220,7 +221,7 @@ func export2Liandi(c *gin.Context) {
 
 	id := arg["id"].(string)
 	err := model.Export2Liandi(id)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -238,7 +239,7 @@ func exportDataInFolder(c *gin.Context) {
 
 	exportFolder := arg["folder"].(string)
 	name, err := model.ExportDataInFolder(exportFolder)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
@@ -254,7 +255,7 @@ func exportData(c *gin.Context) {
 	defer c.JSON(http.StatusOK, ret)
 
 	zipPath, err := model.ExportData()
-	if nil != err {
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
@@ -282,15 +283,20 @@ func exportResources(c *gin.Context) {
 		name = time.Now().Format("export-2006-01-02_15-04-05") // 生成的 *.zip 文件主文件名
 	}
 
+	if nil == arg["paths"] {
+		ret.Code = 1
+		ret.Data = ""
+		ret.Msg = "paths is required"
+		return
+	}
+
 	var resourcePaths []string // 文件/文件夹在工作空间中的路径
-	if nil != arg["paths"] {
-		for _, resourcePath := range arg["paths"].([]interface{}) {
-			resourcePaths = append(resourcePaths, resourcePath.(string))
-		}
+	for _, resourcePath := range arg["paths"].([]interface{}) {
+		resourcePaths = append(resourcePaths, resourcePath.(string))
 	}
 
 	zipFilePath, err := model.ExportResources(resourcePaths, name)
-	if nil != err {
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
@@ -406,12 +412,16 @@ func exportDocx(c *gin.Context) {
 	if nil != arg["merge"] {
 		merge = arg["merge"].(bool)
 	}
-	err := model.ExportDocx(id, savePath, removeAssets, merge)
-	if nil != err {
+
+	fullPath, err := model.ExportDocx(id, savePath, removeAssets, merge)
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
 		return
+	}
+	ret.Data = map[string]interface{}{
+		"path": fullPath,
 	}
 }
 
@@ -445,14 +455,14 @@ func exportTempContent(c *gin.Context) {
 
 	content := arg["content"].(string)
 	tmpExport := filepath.Join(util.TempDir, "export", "temp")
-	if err := os.MkdirAll(tmpExport, 0755); nil != err {
+	if err := os.MkdirAll(tmpExport, 0755); err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
 		return
 	}
 	p := filepath.Join(tmpExport, gulu.Rand.String(7))
-	if err := os.WriteFile(p, []byte(content), 0644); nil != err {
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
@@ -553,7 +563,7 @@ func processPDF(c *gin.Context) {
 	removeAssets := arg["removeAssets"].(bool)
 	watermark := arg["watermark"].(bool)
 	err := model.ProcessPDF(id, path, merge, removeAssets, watermark)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -570,10 +580,9 @@ func exportPreview(c *gin.Context) {
 	}
 
 	id := arg["id"].(string)
-	stdHTML, outline := model.Preview(id)
+	stdHTML := model.Preview(id)
 	ret.Data = map[string]interface{}{
-		"html":    stdHTML,
-		"outline": outline,
+		"html": stdHTML,
 	}
 }
 
@@ -582,7 +591,7 @@ func exportAsFile(c *gin.Context) {
 	defer c.JSON(http.StatusOK, ret)
 
 	form, err := c.MultipartForm()
-	if nil != err {
+	if err != nil {
 		logging.LogErrorf("export as file failed: %s", err)
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -591,7 +600,7 @@ func exportAsFile(c *gin.Context) {
 
 	file := form.File["file"][0]
 	reader, err := file.Open()
-	if nil != err {
+	if err != nil {
 		logging.LogErrorf("export as file failed: %s", err)
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -600,7 +609,7 @@ func exportAsFile(c *gin.Context) {
 	defer reader.Close()
 
 	data, err := io.ReadAll(reader)
-	if nil != err {
+	if err != nil {
 		logging.LogErrorf("export as file failed: %s", err)
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -610,7 +619,7 @@ func exportAsFile(c *gin.Context) {
 	name := "file-" + file.Filename
 	name = util.FilterFileName(name)
 	tmpDir := filepath.Join(util.TempDir, "export")
-	if err = os.MkdirAll(tmpDir, 0755); nil != err {
+	if err = os.MkdirAll(tmpDir, 0755); err != nil {
 		logging.LogErrorf("export as file failed: %s", err)
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -619,7 +628,7 @@ func exportAsFile(c *gin.Context) {
 
 	tmp := filepath.Join(tmpDir, name)
 	err = os.WriteFile(tmp, data, 0644)
-	if nil != err {
+	if err != nil {
 		logging.LogErrorf("export as file failed: %s", err)
 		ret.Code = -1
 		ret.Msg = err.Error()

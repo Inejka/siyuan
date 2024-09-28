@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -29,7 +30,7 @@ import (
 	"github.com/88250/lute/ast"
 	"github.com/siyuan-note/filelock"
 	"github.com/siyuan-note/logging"
-	"github.com/siyuan-note/siyuan/kernel/treenode"
+	"github.com/siyuan-note/siyuan/kernel/task"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
@@ -40,6 +41,9 @@ func CreateBox(name string) (id string, err error) {
 		err = errors.New(Conf.Language(106))
 		return
 	}
+	if "" == name {
+		name = Conf.language(105)
+	}
 
 	WaitForWritingFiles()
 
@@ -49,7 +53,7 @@ func CreateBox(name string) (id string, err error) {
 	id = ast.NewNodeID()
 	boxLocalPath := filepath.Join(util.DataDir, id)
 	err = os.MkdirAll(boxLocalPath, 0755)
-	if nil != err {
+	if err != nil {
 		return
 	}
 
@@ -58,6 +62,7 @@ func CreateBox(name string) (id string, err error) {
 	boxConf.Name = name
 	box.SaveConf(boxConf)
 	IncSync()
+	logging.LogInfof("created box [%s]", id)
 	return
 }
 
@@ -67,21 +72,42 @@ func RenameBox(boxID, name string) (err error) {
 		return errors.New(Conf.Language(0))
 	}
 
+	if 512 < utf8.RuneCountInString(name) {
+		// 限制笔记本名和文档名最大长度为 `512` https://github.com/siyuan-note/siyuan/issues/6299
+		err = errors.New(Conf.Language(106))
+		return
+	}
+
+	if "" == name {
+		name = Conf.language(105)
+	}
+
 	boxConf := box.GetConf()
 	boxConf.Name = name
 	box.Name = name
 	box.SaveConf(boxConf)
 	IncSync()
+	logging.LogInfof("renamed box [%s] to [%s]", boxID, name)
 	return
 }
 
+var boxLock = sync.Map{}
+
 func RemoveBox(boxID string) (err error) {
+	if _, ok := boxLock.Load(boxID); ok {
+		err = fmt.Errorf(Conf.language(239))
+		return
+	}
+
+	boxLock.Store(boxID, true)
+	defer boxLock.Delete(boxID)
+
 	if util.IsReservedFilename(boxID) {
 		return errors.New(fmt.Sprintf("can not remove [%s] caused by it is a reserved file", boxID))
 	}
 
 	WaitForWritingFiles()
-
+	isUserGuide := IsUserGuide(boxID)
 	createDocLock.Lock()
 	defer createDocLock.Unlock()
 
@@ -93,16 +119,16 @@ func RemoveBox(boxID string) (err error) {
 		return errors.New(fmt.Sprintf("can not remove [%s] caused by it is not a dir", boxID))
 	}
 
-	if !IsUserGuide(boxID) {
+	if !isUserGuide {
 		var historyDir string
 		historyDir, err = GetHistoryDir(HistoryOpDelete)
-		if nil != err {
+		if err != nil {
 			logging.LogErrorf("get history dir failed: %s", err)
 			return
 		}
 		p := strings.TrimPrefix(localPath, util.DataDir)
 		historyPath := filepath.Join(historyDir, p)
-		if err = filelock.Copy(localPath, historyPath); nil != err {
+		if err = filelock.Copy(localPath, historyPath); err != nil {
 			logging.LogErrorf("gen sync history failed: %s", err)
 			return
 		}
@@ -111,10 +137,12 @@ func RemoveBox(boxID string) (err error) {
 	}
 
 	unmount0(boxID)
-	if err = filelock.Remove(localPath); nil != err {
+	if err = filelock.Remove(localPath); err != nil {
 		return
 	}
 	IncSync()
+
+	logging.LogInfof("removed box [%s]", boxID)
 	return
 }
 
@@ -142,11 +170,20 @@ func unmount0(boxID string) {
 }
 
 func Mount(boxID string) (alreadyMount bool, err error) {
+	if _, ok := boxLock.Load(boxID); ok {
+		err = fmt.Errorf(Conf.language(239))
+		return
+	}
+
+	boxLock.Store(boxID, true)
+	defer boxLock.Delete(boxID)
+
 	WaitForWritingFiles()
+	isUserGuide := IsUserGuide(boxID)
 
 	localPath := filepath.Join(util.DataDir, boxID)
 	var reMountGuide bool
-	if IsUserGuide(boxID) {
+	if isUserGuide {
 		// 重新挂载帮助文档
 
 		guideBox := Conf.Box(boxID)
@@ -155,18 +192,18 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 			reMountGuide = true
 		}
 
-		if err = filelock.Remove(localPath); nil != err {
+		if err = filelock.Remove(localPath); err != nil {
 			return
 		}
 
 		p := filepath.Join(util.WorkingDir, "guide", boxID)
-		if err = filelock.Copy(p, localPath); nil != err {
+		if err = filelock.Copy(p, localPath); err != nil {
 			return
 		}
 
 		avDirPath := filepath.Join(util.WorkingDir, "guide", boxID, "storage", "av")
 		if filelock.IsExist(avDirPath) {
-			if err = filelock.Copy(avDirPath, filepath.Join(util.DataDir, "storage", "av")); nil != err {
+			if err = filelock.Copy(avDirPath, filepath.Join(util.DataDir, "storage", "av")); err != nil {
 				return
 			}
 		}
@@ -182,10 +219,8 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 			Conf.Save()
 		}
 
+		task.AppendAsyncTaskWithDelay(task.PushMsg, 3*time.Second, util.PushErrMsg, Conf.Language(52), 7000)
 		go func() {
-			time.Sleep(time.Second * 3)
-			util.PushErrMsg(Conf.Language(52), 7000)
-
 			// 每次打开帮助文档时自动检查版本更新并提醒 https://github.com/siyuan-note/siyuan/issues/5057
 			time.Sleep(time.Second * 10)
 			CheckUpdate(true)
@@ -210,30 +245,7 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 	box.Index()
 	// 缓存根一级的文档树展开
 	ListDocTree(box.ID, "/", util.SortModeUnassigned, false, false, Conf.FileTree.MaxListCount)
-	treenode.SaveBlockTree(false)
 	util.ClearPushProgress(100)
-
-	if IsUserGuide(boxID) {
-		go func() {
-			var startID string
-			i := 0
-			for ; i < 70; i++ {
-				time.Sleep(100 * time.Millisecond)
-				guideStartID := map[string]string{
-					"20210808180117-czj9bvb": "20200812220555-lj3enxa",
-					"20211226090932-5lcq56f": "20211226115423-d5z1joq",
-					"20210808180117-6v0mkxr": "20200923234011-ieuun1p",
-				}
-				startID = guideStartID[boxID]
-				if nil != treenode.GetBlockTree(startID) {
-					util.BroadcastByType("main", "openFileById", 0, "", map[string]interface{}{
-						"id": startID,
-					})
-					break
-				}
-			}
-		}()
-	}
 
 	if reMountGuide {
 		return true, nil
@@ -242,5 +254,5 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 }
 
 func IsUserGuide(boxID string) bool {
-	return "20210808180117-czj9bvb" == boxID || "20210808180117-6v0mkxr" == boxID || "20211226090932-5lcq56f" == boxID
+	return "20210808180117-czj9bvb" == boxID || "20210808180117-6v0mkxr" == boxID || "20211226090932-5lcq56f" == boxID || "20240530133126-axarxgx" == boxID
 }

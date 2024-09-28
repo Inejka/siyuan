@@ -51,7 +51,7 @@ const openDockMenu = (app: App) => {
             });
         });
     });
-    menu.fullscreen("bottom");
+    menu.fullscreen();
     if (menu.element.lastElementChild.innerHTML === "") {
         showMessage(window.siyuan.languages._kernel[122]);
     }
@@ -69,10 +69,14 @@ export const initFramework = (app: App, isStart: boolean) => {
     let tag: MobileTags;
     // 不能使用 getEventName，否则点击返回会展开右侧栏
     const firstToolbarElement = sidebarElement.querySelector(".toolbar--border");
-    firstToolbarElement.addEventListener("click", (event: Event & {
-        target: Element
-    }) => {
-        const svgElement = hasTopClosestByTag(event.target, "svg");
+    firstToolbarElement.addEventListener("click", (event: MouseEvent) => {
+        const target = event.target as HTMLElement;
+        let svgElement: HTMLElement;
+        if (typeof event.detail === "string") {
+            svgElement = firstToolbarElement.querySelector(`svg[data-type="sidebar-${event.detail}-tab"]`) as HTMLElement;
+        } else {
+            svgElement = hasTopClosestByTag(target, "svg") as HTMLElement;
+        }
         if (!svgElement) {
             return;
         }
@@ -170,7 +174,7 @@ export const initFramework = (app: App, isStart: boolean) => {
         const idZoomIn = getIdZoomInByPath();
         if (idZoomIn.id) {
             openMobileFileById(app, idZoomIn.id,
-                idZoomIn.isZoomIn ? [Constants.CB_GET_ALL, Constants.CB_GET_HL] : [Constants.CB_GET_HL, Constants.CB_GET_CONTEXT, Constants.CB_GET_ROOTSCROLL]);
+                idZoomIn.isZoomIn ? [Constants.CB_GET_ALL] : [Constants.CB_GET_CONTEXT, Constants.CB_GET_ROOTSCROLL]);
             return;
         }
         if (window.siyuan.config.fileTree.closeTabsOnStart && isStart) {
@@ -180,12 +184,12 @@ export const initFramework = (app: App, isStart: boolean) => {
         const localDoc = window.siyuan.storage[Constants.LOCAL_DOCINFO];
         fetchPost("/api/block/checkBlockExist", {id: localDoc.id}, existResponse => {
             if (existResponse.data) {
-                openMobileFileById(app, localDoc.id, [Constants.CB_GET_SCROLL, Constants.CB_GET_HL]);
+                openMobileFileById(app, localDoc.id, [Constants.CB_GET_SCROLL]);
             } else {
                 fetchPost("/api/block/getRecentUpdatedBlocks", {}, (response) => {
                     if (response.data.length !== 0) {
                         checkFold(response.data[0].id, (zoomIn) => {
-                            openMobileFileById(app, response.data[0].id, zoomIn ? [Constants.CB_GET_ALL, Constants.CB_GET_HL] : [Constants.CB_GET_HL, Constants.CB_GET_CONTEXT, Constants.CB_GET_ROOTSCROLL]);
+                            openMobileFileById(app, response.data[0].id, zoomIn ? [Constants.CB_GET_ALL] : [Constants.CB_GET_CONTEXT, Constants.CB_GET_ROOTSCROLL]);
                         });
                     } else {
                         setEmpty(app);

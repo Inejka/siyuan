@@ -5,6 +5,8 @@ import {matchHotKey} from "./hotKey";
 import {isNotCtrl} from "./compatibility";
 import {scrollCenter} from "../../util/highlightById";
 import {insertEmptyBlock} from "../../block/util";
+import {removeBlock} from "../wysiwyg/remove";
+import {hasPreviousSibling} from "../wysiwyg/getBlock";
 
 const scrollToView = (nodeElement: Element, rowElement: HTMLElement, protyle: IProtyle) => {
     if (nodeElement.getAttribute("custom-pinthead") === "true") {
@@ -230,6 +232,10 @@ export const deleteColumn = (protyle: IProtyle, range: Range, nodeElement: Eleme
         if (sideCellElement.offsetLeft + sideCellElement.clientWidth > nodeElement.firstElementChild.scrollLeft + nodeElement.firstElementChild.clientWidth) {
             nodeElement.firstElementChild.scrollLeft = sideCellElement.offsetLeft + sideCellElement.clientWidth - nodeElement.firstElementChild.clientWidth;
         }
+    } else {
+        nodeElement.classList.add("protyle-wysiwyg--select");
+        removeBlock(protyle, nodeElement, range, "remove");
+        return;
     }
     const tableElement = nodeElement.querySelector("table");
     for (let i = 0; i < tableElement.rows.length; i++) {
@@ -399,6 +405,7 @@ export const fixTable = (protyle: IProtyle, event: KeyboardEvent, range: Range) 
         const trElement = cellElement.parentElement as HTMLTableRowElement;
         if ((!trElement.nextElementSibling && trElement.parentElement.tagName === "TBODY") ||
             (trElement.parentElement.tagName === "THEAD" && !trElement.parentElement.nextElementSibling)) {
+            insertEmptyBlock(protyle, "afterend", nodeElement.getAttribute("data-node-id"));
             return true;
         }
         let nextElement = trElement.nextElementSibling as HTMLTableRowElement;
@@ -457,14 +464,14 @@ export const fixTable = (protyle: IProtyle, event: KeyboardEvent, range: Range) 
         const startContainer = range.startContainer as HTMLElement;
         let previousBrElement;
         if (startContainer.nodeType !== 3 && (startContainer.tagName === "TH" || startContainer.tagName === "TD")) {
-            previousBrElement = (startContainer.childNodes[Math.max(0, range.startOffset - 1)] as HTMLElement)?.previousElementSibling;
+            previousBrElement = (startContainer.childNodes[Math.min(range.startOffset, startContainer.childNodes.length - 1)] as HTMLElement);
         } else if (startContainer.parentElement.tagName === "SPAN") {
             previousBrElement = startContainer.parentElement.previousElementSibling;
         } else {
             previousBrElement = startContainer.previousElementSibling;
         }
         while (previousBrElement) {
-            if (previousBrElement.tagName === "BR") {
+            if (previousBrElement.tagName === "BR" && hasPreviousSibling(previousBrElement)) {
                 return false;
             }
             previousBrElement = previousBrElement.previousElementSibling;

@@ -7,7 +7,12 @@ export const openByMobile = (uri: string) => {
         return;
     }
     if (window.siyuan.config.system.container === "ios") {
-        window.location.href = uri;
+        try {
+            new URL(uri);
+            window.location.href = uri;
+        } catch (e) {
+            window.location.href = "https://" + uri;
+        }
     } else if (isInAndroid()) {
         window.JSAndroid.openExternal(uri);
     } else {
@@ -166,6 +171,11 @@ export const getLocalStorage = (cb: () => void) => {
             sort: 0,
             k: "",
         };
+        defaultStorage[Constants.LOCAL_SEARCHUNREF] = {
+            col: "",
+            row: "",
+            layout: 0,
+        };
         Constants.SIYUAN_ASSETS_SEARCH.forEach(type => {
             defaultStorage[Constants.LOCAL_SEARCHASSET].types[type] = true;
         });
@@ -184,11 +194,15 @@ export const getLocalStorage = (cb: () => void) => {
             dark: "dark",
             annoColor: "var(--b3-pdf-background1)"
         };
-        defaultStorage[Constants.LOCAL_LAYOUTS] = [];   // {name: "", layout:{}}
+        defaultStorage[Constants.LOCAL_LAYOUTS] = [];   // {name: "", layout:{}, time: number, filespaths: filesPath[]}
         defaultStorage[Constants.LOCAL_AI] = [];   // {name: "", memo: ""}
         defaultStorage[Constants.LOCAL_PLUGINTOPUNPIN] = [];
+        defaultStorage[Constants.LOCAL_OUTLINE] = {keepExpand: true};
         defaultStorage[Constants.LOCAL_FILEPOSITION] = {}; // {id: IScrollAttr}
         defaultStorage[Constants.LOCAL_DIALOGPOSITION] = {}; // {id: IPosition}
+        defaultStorage[Constants.LOCAL_HISTORY] = {
+            notebookId: "%", type: 0, operation: "all"
+        };
         defaultStorage[Constants.LOCAL_FLASHCARD] = {
             fullscreen: false
         };
@@ -217,6 +231,7 @@ export const getLocalStorage = (cb: () => void) => {
             id: "",
         };
         defaultStorage[Constants.LOCAL_FONTSTYLES] = [];
+        defaultStorage[Constants.LOCAL_FILESPATHS] = [];    // filesPath[]
         defaultStorage[Constants.LOCAL_SEARCHDATA] = {
             page: 1,
             sort: 0,
@@ -249,8 +264,9 @@ export const getLocalStorage = (cb: () => void) => {
         [Constants.LOCAL_EXPORTIMG, Constants.LOCAL_SEARCHKEYS, Constants.LOCAL_PDFTHEME, Constants.LOCAL_BAZAAR,
             Constants.LOCAL_EXPORTWORD, Constants.LOCAL_EXPORTPDF, Constants.LOCAL_DOCINFO, Constants.LOCAL_FONTSTYLES,
             Constants.LOCAL_SEARCHDATA, Constants.LOCAL_ZOOM, Constants.LOCAL_LAYOUTS, Constants.LOCAL_AI,
-            Constants.LOCAL_PLUGINTOPUNPIN, Constants.LOCAL_SEARCHASSET, Constants.LOCAL_FLASHCARD, Constants.LOCAL_DIALOGPOSITION,
-            Constants.LOCAL_FILEPOSITION].forEach((key) => {
+            Constants.LOCAL_PLUGINTOPUNPIN, Constants.LOCAL_SEARCHASSET, Constants.LOCAL_FLASHCARD,
+            Constants.LOCAL_DIALOGPOSITION, Constants.LOCAL_SEARCHUNREF, Constants.LOCAL_HISTORY,
+            Constants.LOCAL_OUTLINE, Constants.LOCAL_FILEPOSITION, Constants.LOCAL_FILESPATHS].forEach((key) => {
             if (typeof response.data[key] === "string") {
                 try {
                     const parseData = JSON.parse(response.data[key]);
@@ -276,10 +292,18 @@ export const getLocalStorage = (cb: () => void) => {
     });
 };
 
-export const setStorageVal = (key: string, val: any) => {
+export const setStorageVal = (key: string, val: any, cb?:()=>void) => {
+    if (window.siyuan.config.readonly) {
+        return;
+    }
+
     fetchPost("/api/storage/setLocalStorageVal", {
         app: Constants.SIYUAN_APPID,
         key,
         val,
+    }, () => {
+        if (cb) {
+            cb();
+        }
     });
 };

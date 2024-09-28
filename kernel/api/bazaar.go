@@ -25,6 +25,39 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
+func batchUpdatePackage(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	frontend := arg["frontend"].(string)
+	model.BatchUpdateBazaarPackages(frontend)
+}
+
+func getUpdatedPackage(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	frontend := arg["frontend"].(string)
+	plugins, widgets, icons, themes, templates := model.UpdatedPackages(frontend)
+	ret.Data = map[string]interface{}{
+		"plugins":   plugins,
+		"widgets":   widgets,
+		"icons":     icons,
+		"themes":    themes,
+		"templates": templates,
+	}
+}
+
 func getBazaarPackageREAME(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
@@ -91,11 +124,16 @@ func installBazaarPlugin(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	repoURL := arg["repoURL"].(string)
 	repoHash := arg["repoHash"].(string)
 	packageName := arg["packageName"].(string)
 	err := model.InstallBazaarPlugin(repoURL, repoHash, packageName)
-	if nil != err {
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		return
@@ -105,7 +143,7 @@ func installBazaarPlugin(c *gin.Context) {
 
 	util.PushMsg(model.Conf.Language(69), 3000)
 	ret.Data = map[string]interface{}{
-		"packages": model.BazaarPlugins(frontend, ""),
+		"packages": model.BazaarPlugins(frontend, keyword),
 	}
 }
 
@@ -118,17 +156,22 @@ func uninstallBazaarPlugin(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	frontend := arg["frontend"].(string)
 	packageName := arg["packageName"].(string)
 	err := model.UninstallBazaarPlugin(packageName, frontend)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
 
 	ret.Data = map[string]interface{}{
-		"packages": model.BazaarPlugins(frontend, ""),
+		"packages": model.BazaarPlugins(frontend, keyword),
 	}
 }
 
@@ -179,11 +222,16 @@ func installBazaarWidget(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	repoURL := arg["repoURL"].(string)
 	repoHash := arg["repoHash"].(string)
 	packageName := arg["packageName"].(string)
 	err := model.InstallBazaarWidget(repoURL, repoHash, packageName)
-	if nil != err {
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		return
@@ -191,7 +239,7 @@ func installBazaarWidget(c *gin.Context) {
 
 	util.PushMsg(model.Conf.Language(69), 3000)
 	ret.Data = map[string]interface{}{
-		"packages": model.BazaarWidgets(""),
+		"packages": model.BazaarWidgets(keyword),
 	}
 }
 
@@ -204,16 +252,21 @@ func uninstallBazaarWidget(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	packageName := arg["packageName"].(string)
 	err := model.UninstallBazaarWidget(packageName)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
 
 	ret.Data = map[string]interface{}{
-		"packages": model.BazaarWidgets(""),
+		"packages": model.BazaarWidgets(keyword),
 	}
 }
 
@@ -264,11 +317,16 @@ func installBazaarIcon(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	repoURL := arg["repoURL"].(string)
 	repoHash := arg["repoHash"].(string)
 	packageName := arg["packageName"].(string)
 	err := model.InstallBazaarIcon(repoURL, repoHash, packageName)
-	if nil != err {
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		return
@@ -276,7 +334,7 @@ func installBazaarIcon(c *gin.Context) {
 	util.PushMsg(model.Conf.Language(69), 3000)
 
 	ret.Data = map[string]interface{}{
-		"packages":   model.BazaarIcons(""),
+		"packages":   model.BazaarIcons(keyword),
 		"appearance": model.Conf.Appearance,
 	}
 }
@@ -290,16 +348,21 @@ func uninstallBazaarIcon(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	packageName := arg["packageName"].(string)
 	err := model.UninstallBazaarIcon(packageName)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
 
 	ret.Data = map[string]interface{}{
-		"packages":   model.BazaarIcons(""),
+		"packages":   model.BazaarIcons(keyword),
 		"appearance": model.Conf.Appearance,
 	}
 }
@@ -351,18 +414,23 @@ func installBazaarTemplate(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	repoURL := arg["repoURL"].(string)
 	repoHash := arg["repoHash"].(string)
 	packageName := arg["packageName"].(string)
 	err := model.InstallBazaarTemplate(repoURL, repoHash, packageName)
-	if nil != err {
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		return
 	}
 
 	ret.Data = map[string]interface{}{
-		"packages": model.BazaarTemplates(""),
+		"packages": model.BazaarTemplates(keyword),
 	}
 
 	util.PushMsg(model.Conf.Language(69), 3000)
@@ -377,16 +445,21 @@ func uninstallBazaarTemplate(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	packageName := arg["packageName"].(string)
 	err := model.UninstallBazaarTemplate(packageName)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
 
 	ret.Data = map[string]interface{}{
-		"packages": model.BazaarTemplates(""),
+		"packages": model.BazaarTemplates(keyword),
 	}
 }
 
@@ -437,6 +510,11 @@ func installBazaarTheme(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	repoURL := arg["repoURL"].(string)
 	repoHash := arg["repoHash"].(string)
 	packageName := arg["packageName"].(string)
@@ -446,7 +524,7 @@ func installBazaarTheme(c *gin.Context) {
 		update = arg["update"].(bool)
 	}
 	err := model.InstallBazaarTheme(repoURL, repoHash, packageName, int(mode), update)
-	if nil != err {
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		return
@@ -458,7 +536,7 @@ func installBazaarTheme(c *gin.Context) {
 
 	util.PushMsg(model.Conf.Language(69), 3000)
 	ret.Data = map[string]interface{}{
-		"packages":   model.BazaarThemes(""),
+		"packages":   model.BazaarThemes(keyword),
 		"appearance": model.Conf.Appearance,
 	}
 }
@@ -472,16 +550,21 @@ func uninstallBazaarTheme(c *gin.Context) {
 		return
 	}
 
+	var keyword string
+	if keywordArg := arg["keyword"]; nil != keywordArg {
+		keyword = keywordArg.(string)
+	}
+
 	packageName := arg["packageName"].(string)
 	err := model.UninstallBazaarTheme(packageName)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
 
 	ret.Data = map[string]interface{}{
-		"packages":   model.BazaarThemes(""),
+		"packages":   model.BazaarThemes(keyword),
 		"appearance": model.Conf.Appearance,
 	}
 }

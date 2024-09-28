@@ -11,7 +11,7 @@ export const resize = (protyle: IProtyle) => {
     const MIN_ABS = 4;
     // 不能 clearTimeout，否则 split 时左侧无法 resize
     setTimeout(() => {
-        if(!protyle.disabled) {
+        if (!protyle.disabled) {
             const contentRect = protyle.contentElement.getBoundingClientRect();
             protyle.wysiwyg.element.querySelectorAll(".av").forEach((item: HTMLElement) => {
                 if (item.querySelector(".av__title")) {
@@ -28,11 +28,11 @@ export const resize = (protyle: IProtyle) => {
                     }
                 });
             }
-            if (window.siyuan.config.editor.codeSyntaxHighlightLineNum) {
-                protyle.wysiwyg.element.querySelectorAll(".code-block .protyle-linenumber").forEach((block: HTMLElement) => {
-                    lineNumberRender(block);
-                });
-            }
+            protyle.wysiwyg.element.querySelectorAll(".code-block .protyle-linenumber__rows").forEach((item: HTMLElement) => {
+                if ((item.nextElementSibling as HTMLElement).style.wordBreak === "break-word") {
+                    lineNumberRender(item.parentElement);
+                }
+            });
             // 保持光标位置不变 https://ld246.com/article/1673704873983/comment/1673765814595#comments
             if (!protyle.disabled && protyle.toolbar.range) {
                 let rangeRect = protyle.toolbar.range.getBoundingClientRect();

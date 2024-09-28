@@ -25,12 +25,14 @@ const runCode = (code: string, sourceURL: string) => {
     return window.eval("(function anonymous(require, module, exports){".concat(code, "\n})\n//# sourceURL=").concat(sourceURL, "\n"));
 };
 
-export const loadPlugins = async (app: App) => {
+export const loadPlugins = async (app: App, names?: string[]) => {
     const response = await fetchSyncPost("/api/petal/loadPetals", {frontend: getFrontend()});
     let css = "";
     // 为加快启动速度，不进行 await
     response.data.forEach((item: IPluginData) => {
-        loadPluginJS(app, item);
+        if (!names || (names && names.includes(item.name))) {
+            loadPluginJS(app, item);
+        }
         css += item.css || "" + "\n";
     });
     const pluginsStyle = document.getElementById("pluginsStyle");
@@ -86,9 +88,9 @@ export const loadPlugin = async (app: App, item: IPluginData) => {
 };
 
 
-const updateDock = (dockItem: IDockTab[], index: number, plugin: Plugin, type: string) => {
+const updateDock = (dockItem: Config.IUILayoutDockTab[], index: number, plugin: Plugin, type: string) => {
     const dockKeys = Object.keys(plugin.docks);
-    dockItem.forEach((tabItem: IDockTab, tabIndex: number) => {
+    dockItem.forEach((tabItem: Config.IUILayoutDockTab, tabIndex: number) => {
         if (dockKeys.includes(tabItem.type)) {
             if (type === "Left") {
                 plugin.docks[tabItem.type].config.position = index === 0 ? "LeftTop" : "LeftBottom";
@@ -104,42 +106,6 @@ const updateDock = (dockItem: IDockTab[], index: number, plugin: Plugin, type: s
     });
 };
 
-const mergePluginHotkey = (plugin: Plugin) => {
-    if (!window.siyuan.config.keymap.plugin) {
-        window.siyuan.config.keymap.plugin = {};
-    }
-    for (let i = 0; i < plugin.commands.length; i++) {
-        const command = plugin.commands[i];
-        if (!window.siyuan.config.keymap.plugin[plugin.name]) {
-            command.customHotkey = command.hotkey;
-            window.siyuan.config.keymap.plugin[plugin.name] = {
-                [command.langKey]: {
-                    default: command.hotkey,
-                    custom: command.hotkey,
-                }
-            };
-        } else if (!window.siyuan.config.keymap.plugin[plugin.name][command.langKey]) {
-            command.customHotkey = command.hotkey;
-            window.siyuan.config.keymap.plugin[plugin.name][command.langKey] = {
-                default: command.hotkey,
-                custom: command.hotkey,
-            };
-        } else if (window.siyuan.config.keymap.plugin[plugin.name][command.langKey]) {
-            if (typeof window.siyuan.config.keymap.plugin[plugin.name][command.langKey].custom === "string") {
-                command.customHotkey = window.siyuan.config.keymap.plugin[plugin.name][command.langKey].custom;
-            } else {
-                command.customHotkey = command.hotkey;
-            }
-            window.siyuan.config.keymap.plugin[plugin.name][command.langKey]["default"] = command.hotkey;
-        }
-        if (typeof command.customHotkey !== "string") {
-            console.error(`${plugin.name} - commands data is error and has been removed.`);
-            plugin.commands.splice(i, 1);
-            i--;
-        }
-    }
-};
-
 export const afterLoadPlugin = (plugin: Plugin) => {
     try {
         plugin.onLayoutReady();
@@ -148,18 +114,9 @@ export const afterLoadPlugin = (plugin: Plugin) => {
     }
 
     if (!isWindow() || isMobile()) {
-        const unPinMenu: IMenu[] = [];
         plugin.topBarIcons.forEach(element => {
             if (isMobile()) {
-                if (window.siyuan.storage[Constants.LOCAL_PLUGINTOPUNPIN].includes(element.id)) {
-                    unPinMenu.push({
-                        iconHTML: element.firstElementChild.outerHTML,
-                        label: element.textContent.trim(),
-                        click() {
-                            element.dispatchEvent(new CustomEvent("click"));
-                        }
-                    });
-                } else {
+                if (!window.siyuan.storage[Constants.LOCAL_PLUGINTOPUNPIN].includes(element.id)) {
                     document.querySelector("#menuAbout").after(element);
                 }
             } else if (!isWindow()) {
@@ -169,13 +126,9 @@ export const afterLoadPlugin = (plugin: Plugin) => {
                 document.querySelector("#" + (element.getAttribute("data-position") === "right" ? "barPlugins" : "drag")).before(element);
             }
         });
-        if (isMobile() && unPinMenu.length > 0) {
-            return unPinMenu;
-        }
     }
     /// #if !MOBILE
     resizeTopBar();
-    mergePluginHotkey(plugin);
     plugin.statusBarIcons.forEach(element => {
         const statusElement = document.getElementById("status");
         if (element.getAttribute("data-position") === "right") {
@@ -190,17 +143,18 @@ export const afterLoadPlugin = (plugin: Plugin) => {
     }
 
     /// #if !MOBILE
-    window.siyuan.config.uiLayout.left.data.forEach((dockItem: IDockTab[], index: number) => {
+    window.siyuan.config.uiLayout.left.data.forEach((dockItem: Config.IUILayoutDockTab[], index: number) => {
         updateDock(dockItem, index, plugin, "Left");
     });
-    window.siyuan.config.uiLayout.right.data.forEach((dockItem: IDockTab[], index: number) => {
+    window.siyuan.config.uiLayout.right.data.forEach((dockItem: Config.IUILayoutDockTab[], index: number) => {
         updateDock(dockItem, index, plugin, "Right");
     });
-    window.siyuan.config.uiLayout.bottom.data.forEach((dockItem: IDockTab[], index: number) => {
+    window.siyuan.config.uiLayout.bottom.data.forEach((dockItem: Config.IUILayoutDockTab[], index: number) => {
         updateDock(dockItem, index, plugin, "Bottom");
     });
     Object.keys(plugin.docks).forEach(key => {
         const dock = plugin.docks[key];
+        const hotkey = window.siyuan.config.keymap.plugin[plugin.name] ? window.siyuan.config.keymap.plugin[plugin.name][key]?.custom : undefined;
         if (dock.config.position.startsWith("Left")) {
             window.siyuan.layout.leftDock.genButton([{
                 type: key,
@@ -208,7 +162,7 @@ export const afterLoadPlugin = (plugin: Plugin) => {
                 show: dock.config.show,
                 icon: dock.config.icon,
                 title: dock.config.title,
-                hotkey: dock.config.hotkey
+                hotkey
             }], dock.config.position === "LeftBottom" ? 1 : 0, dock.config.index);
         } else if (dock.config.position.startsWith("Bottom")) {
             window.siyuan.layout.bottomDock.genButton([{
@@ -217,7 +171,7 @@ export const afterLoadPlugin = (plugin: Plugin) => {
                 show: dock.config.show,
                 icon: dock.config.icon,
                 title: dock.config.title,
-                hotkey: dock.config.hotkey
+                hotkey
             }], dock.config.position === "BottomRight" ? 1 : 0, dock.config.index);
         } else if (dock.config.position.startsWith("Right")) {
             window.siyuan.layout.rightDock.genButton([{
@@ -226,20 +180,22 @@ export const afterLoadPlugin = (plugin: Plugin) => {
                 show: dock.config.show,
                 icon: dock.config.icon,
                 title: dock.config.title,
-                hotkey: dock.config.hotkey
+                hotkey
             }], dock.config.position === "RightBottom" ? 1 : 0, dock.config.index);
         }
     });
     /// #endif
 };
 
-export const reloadPlugin = (app: App) => {
-    app.plugins.forEach((item) => {
-        uninstall(this, item.name);
+export const reloadPlugin = async (app: App, data: { upsertPlugins: string[], removePlugins: string[] }) => {
+    data.removePlugins.concat(data.upsertPlugins).forEach((item) => {
+        uninstall(app, item);
     });
-    loadPlugins(this).then(() => {
+    loadPlugins(app, data.upsertPlugins).then(() => {
         app.plugins.forEach(item => {
-            afterLoadPlugin(item);
+            if (data.upsertPlugins.includes(item.name)) {
+                afterLoadPlugin(item);
+            }
         });
     });
     /// #if !MOBILE

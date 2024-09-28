@@ -32,18 +32,20 @@ export const fetchPost = (url: string, data?: any, cb?: (response: IWebSocketDat
         init.headers = headers;
     }
     fetch(url, init).then((response) => {
-        if (response.status === 404) {
-            return {
-                data: null,
-                msg: response.statusText,
-                code: response.status,
-            };
-        } else {
-            if (response.headers.get("content-type")?.indexOf("application/json") > -1) {
-                return response.json();
-            } else {
-                return response.text();
-            }
+        switch (response.status) {
+            case 403:
+            case 404:
+                return {
+                    data: null,
+                    msg: response.statusText,
+                    code: -response.status,
+                };
+            default:
+                if (response.headers.get("content-type")?.indexOf("application/json") > -1) {
+                    return response.json();
+                } else {
+                    return response.text();
+                }
         }
     }).then((response: IWebSocketData) => {
         if (typeof response === "string") {
@@ -85,7 +87,11 @@ export const fetchSyncPost = async (url: string, data?: any) => {
         method: "POST",
     };
     if (data) {
-        init.body = JSON.stringify(data);
+        if (data instanceof FormData) {
+            init.body = data;
+        } else {
+            init.body = JSON.stringify(data);
+        }
     }
     const res = await fetch(url, init);
     const res2 = await res.json() as IWebSocketData;

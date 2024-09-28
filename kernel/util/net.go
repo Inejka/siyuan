@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,7 +28,6 @@ import (
 	"github.com/88250/lute/ast"
 	"github.com/gin-gonic/gin"
 	"github.com/imroc/req/v3"
-	"github.com/olahol/melody"
 	"github.com/siyuan-note/httpclient"
 	"github.com/siyuan-note/logging"
 )
@@ -58,7 +58,7 @@ func IsLocalHostname(hostname string) bool {
 }
 
 func IsLocalHost(host string) bool {
-	if hostname, _, err := net.SplitHostPort(strings.TrimSpace(host)); nil != err {
+	if hostname, _, err := net.SplitHostPort(strings.TrimSpace(host)); err != nil {
 		return false
 	} else {
 		return IsLocalHostname(hostname)
@@ -66,7 +66,7 @@ func IsLocalHost(host string) bool {
 }
 
 func IsLocalOrigin(origin string) bool {
-	if url, err := url.Parse(origin); nil == err {
+	if url, err := url.Parse(origin); err == nil {
 		return IsLocalHostname(url.Hostname())
 	}
 	return false
@@ -74,7 +74,7 @@ func IsLocalOrigin(origin string) bool {
 
 func IsOnline(checkURL string, skipTlsVerify bool) bool {
 	_, err := url.Parse(checkURL)
-	if nil != err {
+	if err != nil {
 		logging.LogWarnf("invalid check URL [%s]", checkURL)
 		return false
 	}
@@ -91,6 +91,19 @@ func IsOnline(checkURL string, skipTlsVerify bool) bool {
 	return false
 }
 
+func IsPortOpen(port string) bool {
+	timeout := time.Second
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), timeout)
+	if err != nil {
+		return false
+	}
+	if nil != conn {
+		conn.Close()
+		return true
+	}
+	return false
+}
+
 func isOnline(checkURL string, skipTlsVerify bool) (ret bool) {
 	c := req.C().SetTimeout(3 * time.Second)
 	if skipTlsVerify {
@@ -98,7 +111,7 @@ func isOnline(checkURL string, skipTlsVerify bool) (ret bool) {
 	}
 	c.SetUserAgent(UserAgent)
 
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 2; i++ {
 		resp, err := c.R().Get(checkURL)
 
 		if resp.GetHeader("Location") != "" {
@@ -114,7 +127,7 @@ func isOnline(checkURL string, skipTlsVerify bool) (ret bool) {
 			}
 		}
 
-		ret = nil == err
+		ret = err == nil
 		if ret {
 			break
 		}
@@ -125,22 +138,22 @@ func isOnline(checkURL string, skipTlsVerify bool) (ret bool) {
 	return
 }
 
-func GetRemoteAddr(session *melody.Session) string {
-	ret := session.Request.Header.Get("X-forwarded-for")
+func GetRemoteAddr(req *http.Request) string {
+	ret := req.Header.Get("X-forwarded-for")
 	ret = strings.TrimSpace(ret)
 	if "" == ret {
-		ret = session.Request.Header.Get("X-Real-IP")
+		ret = req.Header.Get("X-Real-IP")
 	}
 	ret = strings.TrimSpace(ret)
 	if "" == ret {
-		return session.Request.RemoteAddr
+		return req.RemoteAddr
 	}
 	return strings.Split(ret, ",")[0]
 }
 
 func JsonArg(c *gin.Context, result *gulu.Result) (arg map[string]interface{}, ok bool) {
 	arg = map[string]interface{}{}
-	if err := c.BindJSON(&arg); nil != err {
+	if err := c.BindJSON(&arg); err != nil {
 		result.Code = -1
 		result.Msg = "parses request failed"
 		return
@@ -162,10 +175,19 @@ func InvalidIDPattern(idArg string, result *gulu.Result) bool {
 
 func IsValidURL(str string) bool {
 	_, err := url.Parse(str)
-	return nil == err
+	return err == nil
 }
 
 func initHttpClient() {
 	http.DefaultClient = httpclient.GetCloudFileClient2Min()
 	http.DefaultTransport = httpclient.NewTransport(false)
+}
+
+func ParsePort(portString string) (uint16, error) {
+	if port, err := strconv.ParseUint(portString, 10, 16); err != nil {
+		logging.LogErrorf("parse port [%s] failed: %s", portString, err)
+		return 0, err
+	} else {
+		return uint16(port), nil
+	}
 }

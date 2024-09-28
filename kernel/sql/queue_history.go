@@ -33,8 +33,7 @@ import (
 var (
 	historyOperationQueue []*historyDBQueueOperation
 	historyDBQueueLock    = sync.Mutex{}
-
-	historyTxLock = sync.Mutex{}
+	historyTxLock         = sync.Mutex{}
 )
 
 type historyDBQueueOperation struct {
@@ -42,7 +41,7 @@ type historyDBQueueOperation struct {
 	action      string // index/deleteOutdated
 
 	histories []*History // index
-	before    string     // deleteOutdated
+	before    int64      // deleteOutdated
 }
 
 func FlushHistoryTxJob() {
@@ -51,7 +50,8 @@ func FlushHistoryTxJob() {
 
 func FlushHistoryQueue() {
 	ops := getHistoryOperations()
-	if 1 > len(ops) {
+	total := len(ops)
+	if 1 > total {
 		return
 	}
 
@@ -72,7 +72,7 @@ func FlushHistoryQueue() {
 		}
 
 		tx, err := beginHistoryTx()
-		if nil != err {
+		if err != nil {
 			return
 		}
 
@@ -80,14 +80,14 @@ func FlushHistoryQueue() {
 		context["current"] = groupOpsCurrent[op.action]
 		context["total"] = groupOpsTotal[op.action]
 
-		if err = execHistoryOp(op, tx, context); nil != err {
+		if err = execHistoryOp(op, tx, context); err != nil {
 			tx.Rollback()
 			logging.LogErrorf("queue operation failed: %s", err)
 			eventbus.Publish(util.EvtSQLHistoryRebuild)
 			return
 		}
 
-		if err = commitHistoryTx(tx); nil != err {
+		if err = commitHistoryTx(tx); err != nil {
 			logging.LogErrorf("commit tx failed: %s", err)
 			return
 		}
@@ -97,7 +97,7 @@ func FlushHistoryQueue() {
 		}
 	}
 
-	if 128 < len(ops) {
+	if 128 < total {
 		debug.FreeOSMemory()
 	}
 
@@ -121,7 +121,7 @@ func execHistoryOp(op *historyDBQueueOperation, tx *sql.Tx, context map[string]i
 	return
 }
 
-func DeleteOutdatedHistories(before string) {
+func DeleteOutdatedHistories(before int64) {
 	historyDBQueueLock.Lock()
 	defer historyDBQueueLock.Unlock()
 

@@ -6,7 +6,7 @@ import {fetchPost} from "../util/fetch";
 import {onGet} from "../protyle/util/onGet";
 import {addLoading} from "../protyle/ui/initUI";
 import {scrollCenter} from "../util/highlightById";
-import {hasClosestByAttribute} from "../protyle/util/hasClosest";
+import {isInEmbedBlock} from "../protyle/util/hasClosest";
 import {setEditMode} from "../protyle/util/setEditMode";
 import {hideElements} from "../protyle/ui/hideElements";
 import {pushBack} from "./util/MobileBackFoward";
@@ -22,6 +22,10 @@ export const getCurrentEditor = () => {
 export const openMobileFileById = (app: App, id: string, action = [Constants.CB_GET_HL]) => {
     window.siyuan.storage[Constants.LOCAL_DOCINFO] = {id};
     setStorageVal(Constants.LOCAL_DOCINFO, window.siyuan.storage[Constants.LOCAL_DOCINFO]);
+    const avPanelElement = document.querySelector(".av__panel");
+    if (avPanelElement && !avPanelElement.classList.contains("fn__none")) {
+        avPanelElement.dispatchEvent(new CustomEvent("click", {detail: "close"}));
+    }
     if (window.siyuan.mobile.editor) {
         saveScroll(window.siyuan.mobile.editor.protyle);
         hideElements(["toolbar", "hint", "util"], window.siyuan.mobile.editor.protyle);
@@ -30,7 +34,7 @@ export const openMobileFileById = (app: App, id: string, action = [Constants.CB_
         }
         let blockElement;
         Array.from(window.siyuan.mobile.editor.protyle.wysiwyg.element.querySelectorAll(`[data-node-id="${id}"]`)).find((item: HTMLElement) => {
-            if (!hasClosestByAttribute(item.parentElement, "data-type", "NodeBlockQueryEmbed")) {
+            if (!isInEmbedBlock(item)) {
                 blockElement = item;
                 return true;
             }
@@ -54,6 +58,7 @@ export const openMobileFileById = (app: App, id: string, action = [Constants.CB_
             action,
             render: {
                 scroll: true,
+                title: true,
                 background: true,
                 gutter: true,
             },
@@ -63,6 +68,7 @@ export const openMobileFileById = (app: App, id: string, action = [Constants.CB_
             }
         };
         if (window.siyuan.mobile.editor) {
+            window.siyuan.mobile.editor.protyle.title.element.removeAttribute("data-render");
             pushBack();
             addLoading(window.siyuan.mobile.editor.protyle);
             if (window.siyuan.mobile.editor.protyle.block.rootID !== data.data.rootID) {
@@ -72,7 +78,12 @@ export const openMobileFileById = (app: App, id: string, action = [Constants.CB_
                 getDocByScroll({
                     protyle: window.siyuan.mobile.editor.protyle,
                     scrollAttr: window.siyuan.storage[Constants.LOCAL_FILEPOSITION][data.data.rootID],
-                    mergedOptions: protyleOptions
+                    mergedOptions: protyleOptions,
+                    cb() {
+                        app.plugins.forEach(item => {
+                            item.eventBus.emit("switch-protyle", {protyle: window.siyuan.mobile.editor.protyle});
+                        });
+                    }
                 });
             } else {
                 fetchPost("/api/filetree/getDoc", {
@@ -83,7 +94,12 @@ export const openMobileFileById = (app: App, id: string, action = [Constants.CB_
                     onGet({
                         data: getResponse,
                         protyle: window.siyuan.mobile.editor.protyle,
-                        action
+                        action,
+                        afterCB() {
+                            app.plugins.forEach(item => {
+                                item.eventBus.emit("switch-protyle", {protyle: window.siyuan.mobile.editor.protyle});
+                            });
+                        }
                     });
                 });
             }
@@ -91,7 +107,6 @@ export const openMobileFileById = (app: App, id: string, action = [Constants.CB_
         } else {
             window.siyuan.mobile.editor = new Protyle(app, document.getElementById("editor"), protyleOptions);
         }
-        (document.getElementById("toolbarName") as HTMLInputElement).value = data.data.rootTitle === "Untitled" ? "" : data.data.rootTitle;
         setEditor();
         closePanel();
     });

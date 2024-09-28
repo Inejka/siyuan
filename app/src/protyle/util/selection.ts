@@ -261,8 +261,9 @@ export const getSelectionOffset = (selectElement: Node, editorElement?: Element,
         preSelectionRange.selectNodeContents(selectElement);
     }
     preSelectionRange.setEnd(range.startContainer, range.startOffset);
-    position.start = preSelectionRange.toString().length;
-    position.end = position.start + range.toString().length;
+    // 需加上表格内软换行 br 的长度
+    position.start = preSelectionRange.toString().length + preSelectionRange.cloneContents().querySelectorAll("br").length;
+    position.end = position.start + range.toString().length + range.cloneContents().querySelectorAll("br").length;
     return position;
 };
 
@@ -307,10 +308,14 @@ export const setLastNodeRange = (editElement: Element, range: Range, setStart = 
     if (!editElement) {
         return range;
     }
-    let lastNode = editElement.lastChild;
+    let lastNode = editElement.lastChild as Element;
     while (lastNode && lastNode.nodeType !== 3) {
+        if (lastNode.nodeType !== 3 && lastNode.tagName === "BR") {
+            // 防止单元格中 ⇧↓ 全部选中
+            return range;
+        }
         // 最后一个为多种行内元素嵌套
-        lastNode = lastNode.lastChild;
+        lastNode = lastNode.lastChild as Element;
     }
     if (!lastNode) {
         range.selectNodeContents(editElement);
@@ -486,12 +491,13 @@ export const focusByRange = (range: Range) => {
     selection.addRange(range);
 };
 
-export const focusBlock = (element: Element, parentElement?: HTMLElement, toStart = true) => {
+export const focusBlock = (element: Element, parentElement?: HTMLElement, toStart = true): false | Range => {
     if (!element) {
         return false;
     }
+
     // hr、嵌入块、数学公式、iframe、音频、视频、图表渲染块等，删除段落块后，光标位置矫正 https://github.com/siyuan-note/siyuan/issues/4143
-    if (element.classList.contains("render-node") || element.classList.contains("iframe") || element.classList.contains("hr")) {
+    if (element.classList.contains("render-node") || element.classList.contains("iframe") || element.classList.contains("hr") || element.classList.contains("av")) {
         const range = document.createRange();
         const type = element.getAttribute("data-type");
         let setRange = false;
@@ -531,23 +537,20 @@ export const focusBlock = (element: Element, parentElement?: HTMLElement, toStar
             range.selectNodeContents(element);
             range.collapse(true);
             setRange = true;
+        } else if (type === "NodeAttributeView") {
+            const cursorElement = element.querySelector(".av__cursor");
+            if (cursorElement) {
+                range.setStart(cursorElement.firstChild, 0);
+                setRange = true;
+            } else {
+                return false;
+            }
         }
         if (setRange) {
             focusByRange(range);
             return range;
         } else {
             focusSideBlock(element);
-            return false;
-        }
-    } else if (element.classList.contains("av")) {
-        const avTitleElement = element.querySelector(".av__title");
-        if (avTitleElement) {
-            const range = document.createRange();
-            range.selectNodeContents(avTitleElement);
-            range.collapse();
-            focusByRange(range);
-            return range;
-        } else {
             return false;
         }
     }
@@ -591,6 +594,13 @@ export const focusBlock = (element: Element, parentElement?: HTMLElement, toStar
                     lastNode = hasPreviousSibling(cursorElement.lastChild) as HTMLElement;
                 }
                 if (lastNode && lastNode.textContent.endsWith("\n")) {
+                    // https://github.com/siyuan-note/siyuan/issues/11362
+                    if (lastNode.nodeType === 1) {
+                        lastNode = lastNode.lastChild;
+                        while (lastNode && lastNode.textContent.indexOf("\n") === -1) {
+                            lastNode = lastNode.previousSibling;
+                        }
+                    }
                     range = getEditorRange(cursorElement);
                     range.setStart(lastNode, lastNode.textContent.length - 1);
                     focusHljs = true;
@@ -605,6 +615,11 @@ export const focusBlock = (element: Element, parentElement?: HTMLElement, toStar
         return range;
     } else if (parentElement) {
         parentElement.focus();
+    } else {
+        // li 下面为 hr、嵌入块、数学公式、iframe、音频、视频、图表渲染块等时递归处理
+        if (element.classList.contains("li")) {
+            return focusBlock(element.querySelector("[data-node-id]"), parentElement, toStart);
+        }
     }
     return false;
 };

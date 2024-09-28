@@ -436,7 +436,8 @@ export class Backlink extends Model {
             fetchPost(isMention ? "/api/ref/getBackmentionDoc" : "/api/ref/getBacklinkDoc", {
                 defID: this.blockId,
                 refTreeID: docId,
-                keyword: isMention ? this.inputsElement[1].value : this.inputsElement[0].value
+                keyword: isMention ? this.inputsElement[1].value : this.inputsElement[0].value,
+                containChildren: true
             }, (response) => {
                 svgElement.removeAttribute("disabled");
                 svgElement.classList.add("b3-list-item__arrow--open");
@@ -450,7 +451,6 @@ export class Backlink extends Model {
                     backlinkData: isMention ? response.data.backmentions : response.data.backlinks,
                     render: {
                         background: false,
-                        title: false,
                         gutter: true,
                         scroll: false,
                         breadcrumb: false,
@@ -466,6 +466,9 @@ export class Backlink extends Model {
         if (!this.blockId) {
             return;
         }
+        this.editors.forEach(item => {
+            item.destroy();
+        });
         const element = this.element.querySelector('.block__icon[data-type="refresh"] svg');
         element.classList.add("fn__rotate");
         fetchPost("/api/ref/refreshBacklink", {
@@ -584,7 +587,7 @@ export class Backlink extends Model {
                 backlinkMOpenIds: [],
                 backlinkMStatus: 3
             };
-            if (data.mentionsCount === 0) {
+            if (data.mentionsCount === 0 || window.siyuan.config.editor.backmentionExpandCount === -1) {
                 this.status[this.blockId].backlinkMStatus = 3;
             } else {
                 Array.from({length: window.siyuan.config.editor.backmentionExpandCount}).forEach((item, index) => {
@@ -592,8 +595,7 @@ export class Backlink extends Model {
                         this.status[this.blockId].backlinkMOpenIds.push(data.backmentions[index].id);
                     }
                 });
-                if (window.siyuan.config.editor.backmentionExpandCount === 0) {
-                    // 设置为 0 时需折叠
+                if (data.mentionsCount === 0) {
                     this.status[this.blockId].backlinkMStatus = 3;
                 } else {
                     if (data.linkRefsCount === 0) {

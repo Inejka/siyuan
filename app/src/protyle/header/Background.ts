@@ -15,6 +15,7 @@ import {Dialog} from "../../dialog";
 import {Constants} from "../../constants";
 import {assetMenu} from "../../menus/protyle";
 import {previewImage} from "../preview/image";
+import {Menu} from "../../plugin/Menu";
 
 const bgs = [
     "background:radial-gradient(black 3px, transparent 4px),radial-gradient(black 3px, transparent 4px),linear-gradient(#fff 4px, transparent 0),linear-gradient(45deg, transparent 74px, transparent 75px, #a4a4a4 75px, #a4a4a4 76px, transparent 77px, transparent 109px),linear-gradient(-45deg, transparent 75px, transparent 76px, #a4a4a4 76px, #a4a4a4 77px, transparent 78px, transparent 109px),#fff;background-size: 109px 109px, 109px 109px,100% 6px, 109px 109px, 109px 109px;background-position: 54px 55px, 0px 0px, 0px 0px, 0px 0px, 0px 0px;",
@@ -98,6 +99,7 @@ export class Background {
     public ial: IObject;
     private imgElement: HTMLImageElement;
     private iconElement: HTMLElement;
+    private actionElements: NodeListOf<Element>;
     private tagsElement: HTMLElement;
     private transparentData = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
@@ -105,14 +107,14 @@ export class Background {
         this.element = document.createElement("div");
         this.element.className = "protyle-background";
         this.element.innerHTML = `<div class="protyle-background__img">
-    <img class="fn__none">
+    <img src="${this.transparentData}">
     <div class="protyle-icons">
-        <span class="protyle-icon protyle-icon--first b3-tooltips b3-tooltips__sw" style="position: relative" aria-label="${window.siyuan.languages.upload}"><input type="file" style="position: absolute;width: 22px;height: 100%;top: 0;left: 0;opacity: .001;overflow: hidden;cursor: pointer;"><svg><use xlink:href="#iconUpload"></use></svg></span>
-        <span class="protyle-icon b3-tooltips b3-tooltips__sw" data-type="link" aria-label="${window.siyuan.languages.link}"><svg><use xlink:href="#iconLink"></use></svg></span>
-        <span class="protyle-icon b3-tooltips b3-tooltips__sw" data-type="asset" aria-label="${window.siyuan.languages.assets}"><svg><use xlink:href="#iconImage"></use></svg></span>
-        <span class="protyle-icon b3-tooltips b3-tooltips__sw" data-type="show-random" aria-label="${window.siyuan.languages.random}"><svg><use xlink:href="#iconRefresh"></use></svg></span>
-        <span class="protyle-icon b3-tooltips b3-tooltips__sw fn__none" data-type="position" aria-label="${window.siyuan.languages.dragPosition}"><svg><use xlink:href="#iconMove"></use></svg></span>
-        <span class="protyle-icon protyle-icon--last b3-tooltips b3-tooltips__sw" data-type="remove" aria-label="${window.siyuan.languages.remove}"><svg><use xlink:href="#iconTrashcan"></use></svg></span>
+        <span class="protyle-icon protyle-icon--first" style="position: relative;overflow: hidden"><input aria-label="${window.siyuan.languages.upload}" class="ariaLabel" data-position="right4bottom" type="file" style="position: absolute;height: 100%;top: 0;right: 0;opacity: .001;overflow: hidden;cursor: pointer;"><svg><use xlink:href="#iconUpload"></use></svg></span>
+        <span class="protyle-icon ariaLabel" data-position="right4bottom" data-type="link" aria-label="${window.siyuan.languages.link}"><svg><use xlink:href="#iconLink"></use></svg></span>
+        <span class="protyle-icon ariaLabel" data-position="right4bottom" data-type="asset" aria-label="${window.siyuan.languages.assets}"><svg><use xlink:href="#iconImage"></use></svg></span>
+        <span class="protyle-icon ariaLabel" data-position="right4bottom" data-type="show-random" aria-label="${window.siyuan.languages.builtIn}"><svg><use xlink:href="#iconRefresh"></use></svg></span>
+        <span class="protyle-icon ariaLabel fn__none" data-position="right4bottom" data-type="position" aria-label="${window.siyuan.languages.dragPosition}"><svg><use xlink:href="#iconMove"></use></svg></span>
+        <span class="protyle-icon protyle-icon--last ariaLabel" data-position="right4bottom" data-type="remove" aria-label="${window.siyuan.languages.remove}"><svg><use xlink:href="#iconTrashcan"></use></svg></span>
     </div>
     <div class="protyle-icons fn__none"><span class="protyle-icon protyle-icon--text">${window.siyuan.languages.dragPosition}</span></div>
     <div class="protyle-icons fn__none" style="opacity: .86;">
@@ -120,18 +122,28 @@ export class Background {
         <span class="protyle-icon protyle-icon--last" data-type="confirm">${window.siyuan.languages.confirm}</span>
     </div>
 </div>
-<div class="b3-chips"></div>
-<div class="protyle-background__iconw">
+<div class="protyle-background__ia">
     <div class="protyle-background__icon" data-menu="true" data-type="open-emoji"></div>
-    <div class="protyle-icons fn__flex-center">
-        <span class="protyle-icon protyle-icon--first b3-tooltips b3-tooltips__s" data-menu="true" data-type="tag" aria-label="${window.siyuan.languages.addTag}"><svg><use xlink:href="#iconTags"></use></svg></span>
-        <span class="protyle-icon b3-tooltips b3-tooltips__s" data-type="icon" aria-label="${window.siyuan.languages.randomIcon}"><svg><use xlink:href="#iconEmoji"></use></svg></span>
-        <span class="protyle-icon protyle-icon--last b3-tooltips b3-tooltips__s" data-type="random" aria-label="${window.siyuan.languages.titleBg}"><svg><use xlink:href="#iconImage"></use></svg></span>
+    <div class="b3-chips fn__none"></div>
+    <div class="protyle-background__action">
+        <button class="b3-button b3-button--cancel" data-menu="true" data-type="tag">
+            <svg><use xlink:href="#iconTags"></use></svg>
+            ${window.siyuan.languages.addTag}
+        </button>
+        <button class="b3-button b3-button--cancel" data-type="icon">
+            <svg><use xlink:href="#iconEmoji"></use></svg>
+            ${window.siyuan.languages.addIcon}
+        </button>
+        <button class="b3-button b3-button--cancel" data-type="random">
+            <svg><use xlink:href="#iconImage"></use></svg>
+            ${window.siyuan.languages.titleBg}
+        </button>
     </div>
 </div>`;
         this.tagsElement = this.element.querySelector(".b3-chips") as HTMLElement;
         this.iconElement = this.element.querySelector(".protyle-background__icon") as HTMLElement;
-        this.imgElement = this.element.firstElementChild.firstElementChild as HTMLImageElement;
+        this.imgElement = this.element.querySelector(".protyle-background__img img") as HTMLImageElement;
+        this.actionElements = this.element.querySelectorAll(".protyle-background__action:not(.fn__flex-center) .b3-button");
 
         this.element.addEventListener("dragover", async (event) => {
             event.preventDefault();
@@ -256,7 +268,7 @@ export class Background {
                         html += `<div data-index="${index}" style="height: 128px;${item}" class="b3-card b3-card--wrap"></div>`;
                     });
                     const dialog = new Dialog({
-                        title: window.siyuan.languages.random,
+                        title: window.siyuan.languages.builtIn,
                         content: `<div class="b3-cards">${html}</div>`,
                         width: isMobile() ? "92vw" : "912px",
                         height: isMobile() ? "80vh" : "70vh",
@@ -329,12 +341,20 @@ export class Background {
                         if (protyle.model) {
                             protyle.model.parent.setDocIcon(emoji);
                         }
+                        this.iconElement.classList.remove("fn__none");
+                        const rect = this.iconElement.getBoundingClientRect();
+                        openEmojiPanel(protyle.block.rootID, "doc", {
+                            x: rect.left,
+                            y: rect.bottom,
+                            h: rect.height,
+                            w: rect.width
+                        });
                     }
                     event.preventDefault();
                     event.stopPropagation();
                     break;
                 } else if (type === "tag") {
-                    this.openTag(protyle);
+                    this.openTag(protyle, target);
                     event.preventDefault();
                     event.stopPropagation();
                     break;
@@ -373,11 +393,7 @@ export class Background {
                     /// #if !MOBILE
                     openGlobalSearch(protyle.app, `#${target.textContent}#`, !window.siyuan.ctrlIsPressed);
                     /// #else
-                    const searchOption = window.siyuan.storage[Constants.LOCAL_SEARCHDATA];
                     popSearch(protyle.app, {
-                        removed: searchOption.removed,
-                        sort: searchOption.sort,
-                        group: searchOption.group,
                         hasReplace: false,
                         method: 0,
                         hPath: "",
@@ -385,8 +401,6 @@ export class Background {
                         k: `#${target.textContent}#`,
                         r: "",
                         page: 1,
-                        types: Object.assign({}, searchOption.types),
-                        replaceTypes: Object.assign({}, searchOption.replaceTypes)
                     });
                     /// #endif
                     event.preventDefault();
@@ -431,20 +445,27 @@ export class Background {
             tags.split(",").forEach((item, index) => {
                 html += `<div class="b3-chip b3-chip--middle b3-chip--pointer b3-chip--${colors[index % 7]}" data-type="open-search">${item}<svg class="b3-chip__close" data-type="remove-tag"><use xlink:href="#iconCloseRound"></use></svg></div>`;
             });
-            this.tagsElement.innerHTML = html;
+            this.tagsElement.innerHTML = `${html}<span class="fn__space"></span>
+<div class="protyle-background__action fn__flex-center">
+    <button class="b3-button b3-button--cancel" style="margin-top: 0" data-menu="true" data-type="tag"><svg><use xlink:href="#iconAdd"></use></svg>${window.siyuan.languages.addTag}</button>
+</div>`;
+            this.tagsElement.classList.remove("fn__none");
+            this.actionElements[0].classList.add("fn__none");
         } else {
-            this.tagsElement.innerHTML = "";
+            this.tagsElement.classList.add("fn__none");
+            this.actionElements[0].classList.remove("fn__none");
         }
 
         if (icon) {
             this.iconElement.classList.remove("fn__none");
             this.iconElement.innerHTML = unicode2Emoji(icon);
+            this.actionElements[1].classList.add("fn__none");
         } else {
+            this.actionElements[1].classList.remove("fn__none");
             this.iconElement.classList.add("fn__none");
         }
 
         if (img) {
-            this.imgElement.classList.remove("fn__none");
             // 历史数据解析：background-image: url(\"assets/沙发背景墙11-20220418171700-w6vilzt.jpeg\"); background-position: center -254px; background-size: cover; background-repeat: no-repeat; min-height: 30vh
             this.imgElement.setAttribute("style", Lute.UnEscapeHTMLStr(img));
             if (img.indexOf("url(") > -1) {
@@ -458,87 +479,97 @@ export class Background {
                 this.imgElement.setAttribute("src", this.transparentData);
                 this.element.querySelector('[data-type="position"]').classList.add("fn__none");
             }
-        } else {
-            this.imgElement.classList.add("fn__none");
-        }
-
-        if (img) {
+            this.actionElements[2].classList.add("fn__none");
+            this.imgElement.parentElement.classList.remove("fn__none");
+            this.iconElement.style.marginTop = "";
+            /// #if MOBILE
             // 移动端键盘弹起和点击加号需保持滚动高度一致
-            this.element.style.minHeight = isMobile() ? "200px" : "30vh";
-        } else if (icon) {
-            this.element.style.minHeight = (this.tagsElement.clientHeight + 56) + "px";
-        } else if (tags) {
-            this.element.style.minHeight = this.tagsElement.clientHeight + "px";
+            this.imgElement.style.height = "200px";
+            /// #endif
         } else {
-            this.element.style.minHeight = "0";
+            this.imgElement.parentElement.classList.add("fn__none");
+            this.actionElements[2].classList.remove("fn__none");
+            this.iconElement.style.marginTop = "8px";
         }
     }
 
-    private openTag(protyle: IProtyle) {
-        fetchPost("/api/search/searchTag", {
-            k: "",
-        }, (response) => {
-            let html = "";
-            response.data.tags.forEach((item: string, index: number) => {
-                html += `<div class="b3-list-item${index === 0 ? " b3-list-item--focus" : ""}">${item}</div>`;
-            });
-            window.siyuan.menus.menu.remove();
-            window.siyuan.menus.menu.element.lastElementChild.innerHTML = `<div class="fn__flex-column" style="max-height:50vh;margin: 0 -8px"><input style="margin: 0px 8px 4px 8px" class="b3-text-field"/>
-<div class="b3-list fn__flex-1 b3-list--background" style="position: relative">${html}</div>
-</div>`;
-
-            const listElement = window.siyuan.menus.menu.element.querySelector(".b3-list--background");
-            const inputElement = window.siyuan.menus.menu.element.querySelector("input");
-            inputElement.addEventListener("keydown", (event: KeyboardEvent) => {
-                event.stopPropagation();
-                if (event.isComposing) {
-                    return;
-                }
-                upDownHint(listElement, event);
-                if (event.key === "Enter") {
-                    const currentElement = listElement.querySelector(".b3-list-item--focus");
-                    if (currentElement) {
-                        this.addTags(currentElement.textContent, protyle);
-                    } else {
-                        this.addTags(inputElement.value, protyle);
-                    }
-                    window.siyuan.menus.menu.remove();
-                } else if (event.key === "Escape") {
-                    window.siyuan.menus.menu.remove();
-                }
-            });
-            inputElement.addEventListener("input", (event) => {
-                event.stopPropagation();
+    private openTag(protyle: IProtyle, target: HTMLElement) {
+        window.siyuan.menus.menu.remove();
+        const menu = new Menu();
+        menu.addItem({
+            iconHTML: "",
+            type: "empty",
+            label: `<div class="fn__flex-column b3-menu__filter">
+    <input class="b3-text-field fn__flex-shrink" placeholder="${window.siyuan.languages.tag}"/>
+    <div class="fn__hr"></div>
+    <div class="b3-list fn__flex-1 b3-list--background">
+        <img style="margin: 0 auto;display: block;width: 64px;height: 64px" src="/stage/loading-pure.svg">
+    </div>
+</div>`,
+            bind: (element) => {
+                const listElement = element.querySelector(".b3-list--background");
                 fetchPost("/api/search/searchTag", {
-                    k: inputElement.value,
+                    k: "",
                 }, (response) => {
-                    let searchHTML = "";
-                    let hasKey = false;
-                    response.data.tags.forEach((item: string) => {
-                        searchHTML += `<div class="b3-list-item">${item}</div>`;
-                        if (item === `<mark>${response.data.k}</mark>`) {
-                            hasKey = true;
-                        }
+                    let html = "";
+                    response.data.tags.forEach((item: string, index: number) => {
+                        html += `<div class="b3-list-item b3-list-item--narrow${index === 0 ? " b3-list-item--focus" : ""}">${item}</div>`;
                     });
-                    if (!hasKey && response.data.k) {
-                        searchHTML = `<div class="b3-list-item"><mark>${response.data.k}</mark></div>` + searchHTML;
-                    }
-                    listElement.innerHTML = searchHTML;
-                    listElement.firstElementChild.classList.add("b3-list-item--focus");
+                    listElement.innerHTML = html;
                 });
-            });
-            listElement.addEventListener("click", (event) => {
-                const target = event.target as HTMLElement;
-                const listItemElement = hasClosestByClassName(target, "b3-list-item");
-                if (!listItemElement) {
-                    return;
-                }
-                this.addTags(listItemElement.textContent, protyle);
-            });
-            const rect = this.iconElement.nextElementSibling.getBoundingClientRect();
-            window.siyuan.menus.menu.popup({x: rect.left, y: rect.top + rect.height});
-            inputElement.focus();
+                const inputElement = element.querySelector("input");
+                inputElement.addEventListener("keydown", (event: KeyboardEvent) => {
+                    event.stopPropagation();
+                    if (event.isComposing) {
+                        return;
+                    }
+                    upDownHint(listElement, event);
+                    if (event.key === "Enter") {
+                        const currentElement = listElement.querySelector(".b3-list-item--focus");
+                        if (currentElement) {
+                            this.addTags(currentElement.textContent, protyle);
+                        } else {
+                            this.addTags(inputElement.value, protyle);
+                        }
+                        window.siyuan.menus.menu.remove();
+                    } else if (event.key === "Escape") {
+                        window.siyuan.menus.menu.remove();
+                    }
+                });
+                inputElement.addEventListener("input", (event) => {
+                    event.stopPropagation();
+                    fetchPost("/api/search/searchTag", {
+                        k: inputElement.value,
+                    }, (response) => {
+                        let searchHTML = "";
+                        let hasKey = false;
+                        response.data.tags.forEach((item: string) => {
+                            searchHTML += `<div class="b3-list-item b3-list-item--narrow">${item}</div>`;
+                            if (item === `<mark>${response.data.k}</mark>`) {
+                                hasKey = true;
+                            }
+                        });
+                        if (!hasKey && response.data.k) {
+                            searchHTML = `<div class="b3-list-item b3-list-item--narrow"><mark>${response.data.k}</mark></div>` + searchHTML;
+                        }
+                        listElement.innerHTML = searchHTML;
+                        listElement.firstElementChild.classList.add("b3-list-item--focus");
+                    });
+                });
+                listElement.addEventListener("click", (event) => {
+                    const target = event.target as HTMLElement;
+                    const listItemElement = hasClosestByClassName(target, "b3-list-item");
+                    if (!listItemElement) {
+                        return;
+                    }
+                    this.addTags(listItemElement.textContent, protyle);
+                });
+            }
         });
+        menu.element.querySelector(".b3-menu__items").setAttribute("style", "overflow: initial");
+        const rect = target.getBoundingClientRect();
+        menu.open({x: rect.left, y: rect.top + rect.height});
+        menu.element.querySelector("input").focus();
     }
 
     private getTags(removeTag?: string) {

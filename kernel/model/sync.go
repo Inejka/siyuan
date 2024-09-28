@@ -29,13 +29,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/88250/go-humanize"
 	"github.com/88250/gulu"
 	"github.com/88250/lute/html"
-	"github.com/dustin/go-humanize"
 	"github.com/gorilla/websocket"
 	"github.com/siyuan-note/dejavu"
 	"github.com/siyuan-note/dejavu/cloud"
 	"github.com/siyuan-note/logging"
+	"github.com/siyuan-note/siyuan/kernel/cache"
 	"github.com/siyuan-note/siyuan/kernel/conf"
 	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/sql"
@@ -64,7 +65,7 @@ func SyncDataDownload() {
 
 	err := syncRepoDownload()
 	code := 1
-	if nil != err {
+	if err != nil {
 		code = 2
 	}
 	util.BroadcastByType("main", "syncing", code, Conf.Sync.Stat, nil)
@@ -91,7 +92,7 @@ func SyncDataUpload() {
 
 	err := syncRepoUpload()
 	code := 1
-	if nil != err {
+	if err != nil {
 		code = 2
 	}
 	util.BroadcastByType("main", "syncing", code, Conf.Sync.Stat, nil)
@@ -150,7 +151,7 @@ func BootSyncData() {
 	util.BroadcastByType("main", "syncing", 0, Conf.Language(81), nil)
 	err := bootSyncRepo()
 	code := 1
-	if nil != err {
+	if err != nil {
 		code = 2
 	}
 	util.BroadcastByType("main", "syncing", code, Conf.Sync.Stat, nil)
@@ -201,7 +202,7 @@ func syncData(exit, byHand bool) {
 
 	dataChanged, err := syncRepo(exit, byHand)
 	code := 1
-	if nil != err {
+	if err != nil {
 		code = 2
 	}
 	util.BroadcastByType("main", "syncing", code, Conf.Sync.Stat, nil)
@@ -221,7 +222,6 @@ func syncData(exit, byHand bool) {
 			logging.LogErrorf("write websocket message failed: %v", writeErr)
 		}
 	}
-
 	return
 }
 
@@ -257,12 +257,6 @@ func checkSync(boot, exit, byHand bool) bool {
 		if !IsPaidUser() {
 			return false
 		}
-	}
-
-	if isSyncing.Load() {
-		logging.LogWarnf("sync is in progress")
-		planSyncAfter(fixSyncInterval)
-		return false
 	}
 
 	if 7 < autoSyncErrCount && !byHand {
@@ -307,8 +301,14 @@ func removeIndexes(removeFilePaths []string) (removeRootIDs []string) {
 			util.IncBootProgress(bootProgressPart, msg)
 			util.PushStatusBar(msg)
 
+			bts := treenode.GetBlockTreesByRootID(block.RootID)
+			for _, b := range bts {
+				cache.RemoveBlockIAL(b.ID)
+			}
+			cache.RemoveDocIAL(block.Path)
+
 			treenode.RemoveBlockTreesByRootID(block.RootID)
-			sql.RemoveTreeQueue(block.BoxID, block.RootID)
+			sql.RemoveTreeQueue(block.RootID)
 		}
 	}
 
@@ -346,8 +346,15 @@ func upsertIndexes(upsertFilePaths []string) (upsertRootIDs []string) {
 		if nil != err0 {
 			continue
 		}
-		treenode.IndexBlockTree(tree)
+		treenode.UpsertBlockTree(tree)
 		sql.UpsertTreeQueue(tree)
+
+		bts := treenode.GetBlockTreesByRootID(tree.ID)
+		for _, b := range bts {
+			cache.RemoveBlockIAL(b.ID)
+		}
+		cache.RemoveDocIAL(tree.Path)
+
 		upsertRootIDs = append(upsertRootIDs, tree.Root.ID)
 	}
 
@@ -467,12 +474,12 @@ func CreateCloudSyncDir(name string) (err error) {
 	}
 
 	repo, err := newRepository()
-	if nil != err {
+	if err != nil {
 		return
 	}
 
 	err = repo.CreateCloudRepo(name)
-	if nil != err {
+	if err != nil {
 		err = errors.New(formatRepoErrorMsg(err))
 		return
 	}
@@ -492,12 +499,12 @@ func RemoveCloudSyncDir(name string) (err error) {
 	}
 
 	repo, err := newRepository()
-	if nil != err {
+	if err != nil {
 		return
 	}
 
 	err = repo.RemoveCloudRepo(name)
-	if nil != err {
+	if err != nil {
 		err = errors.New(formatRepoErrorMsg(err))
 		return
 	}
@@ -518,12 +525,12 @@ func ListCloudSyncDir() (syncDirs []*Sync, hSize string, err error) {
 	var size int64
 
 	repo, err := newRepository()
-	if nil != err {
+	if err != nil {
 		return
 	}
 
 	dirs, size, err = repo.GetCloudRepos()
-	if nil != err {
+	if err != nil {
 		err = errors.New(formatRepoErrorMsg(err))
 		return
 	}
@@ -544,13 +551,13 @@ func ListCloudSyncDir() (syncDirs []*Sync, hSize string, err error) {
 			CloudName: d.Name,
 		}
 		if conf.ProviderSiYuan == Conf.Sync.Provider {
-			sync.HSize = humanize.Bytes(uint64(dirSize))
+			sync.HSize = humanize.BytesCustomCeil(uint64(dirSize), 2)
 		}
 		syncDirs = append(syncDirs, sync)
 	}
 	hSize = "-"
 	if conf.ProviderSiYuan == Conf.Sync.Provider {
-		hSize = humanize.Bytes(uint64(size))
+		hSize = humanize.BytesCustomCeil(uint64(size), 2)
 	}
 	return
 }
@@ -576,6 +583,7 @@ func formatRepoErrorMsg(err error) string {
 	} else if errors.Is(err, cloud.ErrCloudServiceUnavailable) {
 		msg = Conf.language(219)
 	} else {
+		logging.LogErrorf("sync failed caused by network: %s", msg)
 		msgLowerCase := strings.ToLower(msg)
 		if strings.Contains(msgLowerCase, "permission denied") || strings.Contains(msg, "access is denied") {
 			msg = Conf.Language(33)
@@ -598,17 +606,17 @@ func formatRepoErrorMsg(err error) string {
 func getSyncIgnoreLines() (ret []string) {
 	ignore := filepath.Join(util.DataDir, ".siyuan", "syncignore")
 	err := os.MkdirAll(filepath.Dir(ignore), 0755)
-	if nil != err {
+	if err != nil {
 		return
 	}
 	if !gulu.File.IsExist(ignore) {
-		if err = gulu.File.WriteFileSafer(ignore, nil, 0644); nil != err {
+		if err = gulu.File.WriteFileSafer(ignore, nil, 0644); err != nil {
 			logging.LogErrorf("create syncignore [%s] failed: %s", ignore, err)
 			return
 		}
 	}
 	data, err := os.ReadFile(ignore)
-	if nil != err {
+	if err != nil {
 		logging.LogErrorf("read syncignore [%s] failed: %s", ignore, err)
 		return
 	}
@@ -620,6 +628,7 @@ func getSyncIgnoreLines() (ret []string) {
 	ret = append(ret, "20210808180117-6v0mkxr/**/*")
 	ret = append(ret, "20210808180117-czj9bvb/**/*")
 	ret = append(ret, "20211226090932-5lcq56f/**/*")
+	ret = append(ret, "20240530133126-axarxgx/**/*")
 
 	ret = gulu.Str.RemoveDuplicatedElem(ret)
 	return
@@ -822,7 +831,7 @@ func dialSyncWebSocket() (c *websocket.Conn, err error) {
 		"x-siyuan-repo":     []string{Conf.Sync.CloudName},
 	}
 	c, _, err = websocket.DefaultDialer.Dial(endpoint, header)
-	if nil == err {
+	if err == nil {
 		closedSyncWebSocket.Store(false)
 	}
 	return

@@ -9,6 +9,7 @@ import {openNewWindowById} from "../window/openNewWindow";
 /// #endif
 /// #if !MOBILE
 import {moveResize} from "../dialog/moveResize";
+import {openFileById} from "../editor/util";
 /// #endif
 import {fetchPost} from "../util/fetch";
 import {showMessage} from "../dialog/message";
@@ -118,6 +119,14 @@ export class BlockPanel {
                         /// #if !BROWSER
                         openNewWindowById(this.nodeIds[0]);
                         /// #endif
+                    } else if (type === "stickTab") {
+                        /// #if !BROWSER
+                        openFileById({
+                            app: options.app,
+                            id: this.nodeIds[0],
+                            action: this.editors[0].protyle.block.rootID !== this.nodeIds[0] ? [Constants.CB_GET_ALL, Constants.CB_GET_FOCUS] : [Constants.CB_GET_CONTEXT],
+                        });
+                        /// #endif
                     }
                     event.preventDefault();
                     event.stopPropagation();
@@ -157,7 +166,7 @@ export class BlockPanel {
                 action.push(Constants.CB_GET_ALL);
             } else {
                 action.push(Constants.CB_GET_CONTEXT);
-                action.push(Constants.CB_GET_HL);
+                // 不需要高亮 https://github.com/siyuan-note/siyuan/issues/11160#issuecomment-2084652764
             }
 
             if (this.isBacklink) {
@@ -174,9 +183,6 @@ export class BlockPanel {
                 },
                 typewriterMode: false,
                 after: (editor) => {
-                    editorElement.addEventListener("mouseleave", () => {
-                        hideElements(["gutter"], editor.protyle);
-                    });
                     if (response.data.rootID !== this.nodeIds[index]) {
                         editor.protyle.breadcrumb.element.parentElement.lastElementChild.classList.remove("fn__none");
                     }
@@ -211,11 +217,13 @@ export class BlockPanel {
             });
             this.editors = [];
         }
+        const level = parseInt(this.element.dataset.level);
         this.element.remove();
         this.element = undefined;
         this.targetElement = undefined;
         // 移除弹出上使用右键菜单
-        if (window.siyuan.menus.menu.element.dataset.from !== "app") {
+        const menuLevel = parseInt(window.siyuan.menus.menu.element.dataset.from);
+        if (window.siyuan.menus.menu.element.dataset.from !== "app" && menuLevel && menuLevel >= level) {
             // https://github.com/siyuan-note/siyuan/issues/9854 右键菜单不是从浮窗中弹出的则不进行移除
             window.siyuan.menus.menu.remove();
         }
@@ -229,7 +237,9 @@ export class BlockPanel {
         let openHTML = "";
         /// #if !BROWSER
         if (this.nodeIds.length === 1) {
-            openHTML = `<span data-type="open" class="block__icon block__icon--show b3-tooltips b3-tooltips__sw" aria-label="${window.siyuan.languages.openByNewWindow}"><svg><use xlink:href="#iconOpenWindow"></use></svg></span>
+            openHTML = `<span data-type="stickTab" class="block__icon block__icon--show b3-tooltips b3-tooltips__sw" aria-label="${window.siyuan.languages.openBy}"><svg><use xlink:href="#iconOpen"></use></svg></span>
+<span class="fn__space"></span>
+<span data-type="open" class="block__icon block__icon--show b3-tooltips b3-tooltips__sw" aria-label="${window.siyuan.languages.openByNewWindow}"><svg><use xlink:href="#iconOpenWindow"></use></svg></span>
 <span class="fn__space"></span>`;
         }
         /// #endif
@@ -263,6 +273,9 @@ export class BlockPanel {
         this.element.querySelectorAll(".block__edit").forEach((item: HTMLElement, index) => {
             if (index < 5) {
                 this.initProtyle(item, index === 0 ? () => {
+                    if (!document.contains(this.element)) {
+                        return;
+                    }
                     let targetRect;
                     if (this.targetElement && this.targetElement.classList.contains("protyle-wysiwyg__embed")) {
                         targetRect = this.targetElement.getBoundingClientRect();

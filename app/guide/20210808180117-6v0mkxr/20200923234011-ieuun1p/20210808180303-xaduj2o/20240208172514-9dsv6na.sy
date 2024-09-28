@@ -6,7 +6,8 @@
 		"icon": "1f5c3-fe0f",
 		"id": "20240208172514-9dsv6na",
 		"title": "Database",
-		"updated": "20240208173738"
+		"type": "doc",
+		"updated": "20240818175612"
 	},
 	"Children": [
 		{
@@ -450,7 +451,7 @@
 			"HeadingLevel": 2,
 			"Properties": {
 				"id": "20240208173416-t51ome2",
-				"updated": "20240208173416"
+				"updated": "20240818174919"
 			},
 			"Children": [
 				{
@@ -520,7 +521,7 @@
 								{
 									"Type": "NodeTextMark",
 									"TextMarkType": "code",
-									"TextMarkTextContent": ".action{ .attribute}"
+									"TextMarkTextContent": ".action{ .attribute }"
 								},
 								{
 									"Type": "NodeText",
@@ -630,55 +631,45 @@
 			"AttributeViewType": "table"
 		},
 		{
-			"ID": "20240208173718-rd3m292",
-			"Type": "NodeParagraph",
+			"ID": "20240818174922-r0eubvc",
+			"Type": "NodeHeading",
+			"HeadingLevel": 2,
 			"Properties": {
-				"id": "20240208173718-rd3m292",
-				"updated": "20240208173725"
+				"id": "20240818174922-r0eubvc",
+				"updated": "20240818175612"
 			},
 			"Children": [
 				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "tag",
+					"TextMarkTextContent": "Note"
+				},
+				{
 					"Type": "NodeText",
-					"Data": "Limitations:"
+					"Data": "​"
 				}
 			]
 		},
 		{
-			"ID": "20240208173718-nfm0bmg",
-			"Type": "NodeList",
-			"ListData": {},
+			"ID": "20240818175612-1oygtbw",
+			"Type": "NodeParagraph",
 			"Properties": {
-				"id": "20240208173718-nfm0bmg",
-				"updated": "20240208173738"
+				"id": "20240818175612-1oygtbw",
+				"updated": "20240818175612"
 			},
 			"Children": [
 				{
-					"ID": "20240208173718-02mf086",
-					"Type": "NodeListItem",
-					"ListData": {
-						"BulletChar": 42,
-						"Marker": "Kg=="
-					},
-					"Properties": {
-						"id": "20240208173718-02mf086",
-						"updated": "20240208173738"
-					},
-					"Children": [
-						{
-							"ID": "20240208173718-glmn4sj",
-							"Type": "NodeParagraph",
-							"Properties": {
-								"id": "20240208173718-glmn4sj",
-								"updated": "20240208173738"
-							},
-							"Children": [
-								{
-									"Type": "NodeText",
-									"Data": "Templates do not support access to rollups and other templates"
-								}
-							]
-						}
-					]
+					"Type": "NodeText",
+					"Data": "If you need to wrap a line in a database cell, use "
+				},
+				{
+					"Type": "NodeTextMark",
+					"TextMarkType": "kbd",
+					"TextMarkTextContent": "Shift+Enter"
+				},
+				{
+					"Type": "NodeText",
+					"Data": "​ ."
 				}
 			]
 		}

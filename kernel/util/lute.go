@@ -24,6 +24,25 @@ import (
 	"github.com/siyuan-note/logging"
 )
 
+// MarkdownSettings 运行时 Markdown 配置。
+var MarkdownSettings = &Markdown{
+	InlineAsterisk:   true,
+	InlineUnderscore: true,
+	InlineSup:        true,
+	InlineSub:        true,
+	InlineTag:        true,
+	InlineMath:       true,
+}
+
+type Markdown struct {
+	InlineAsterisk   bool `json:"inlineAsterisk"`   // 是否启用行级 * 语法
+	InlineUnderscore bool `json:"inlineUnderscore"` // 是否启用行级 _ 语法
+	InlineSup        bool `json:"inlineSup"`        // 是否启用行级上标
+	InlineSub        bool `json:"inlineSub"`        // 是否启用行级下标
+	InlineTag        bool `json:"inlineTag"`        // 是否启用行级标签
+	InlineMath       bool `json:"inlineMath"`       // 是否启用行级公式
+}
+
 func NewLute() (ret *lute.Lute) {
 	ret = lute.New()
 	ret.SetTextMark(true)
@@ -36,9 +55,14 @@ func NewLute() (ret *lute.Lute) {
 	ret.SetImgPathAllowSpace(true)
 	ret.SetGitConflict(true)
 	ret.SetMark(true)
-	ret.SetSup(true)
-	ret.SetSub(true)
+	ret.SetInlineAsterisk(MarkdownSettings.InlineAsterisk)
+	ret.SetInlineUnderscore(MarkdownSettings.InlineUnderscore)
+	ret.SetSup(MarkdownSettings.InlineSup)
+	ret.SetSub(MarkdownSettings.InlineSub)
+	ret.SetTag(MarkdownSettings.InlineTag)
+	ret.SetInlineMath(MarkdownSettings.InlineMath)
 	ret.SetInlineMathAllowDigitAfterOpenMarker(true)
+	ret.SetGFMStrikethrough1(false)
 	ret.SetFootnotes(false)
 	ret.SetToC(false)
 	ret.SetIndentCodeBlock(false)
@@ -66,12 +90,19 @@ func NewStdLute() (ret *lute.Lute) {
 	ret.SetGFMAutoLink(false) // 导入 Markdown 时不自动转换超链接 https://github.com/siyuan-note/siyuan/issues/7682
 	ret.SetImgPathAllowSpace(true)
 	ret.SetInlineMathAllowDigitAfterOpenMarker(true) // Formula parsing supports $ followed by numbers when importing Markdown https://github.com/siyuan-note/siyuan/issues/8362
+	ret.SetInlineAsterisk(MarkdownSettings.InlineAsterisk)
+	ret.SetInlineUnderscore(MarkdownSettings.InlineUnderscore)
+	ret.SetSup(MarkdownSettings.InlineSup)
+	ret.SetSub(MarkdownSettings.InlineSub)
+	ret.SetTag(MarkdownSettings.InlineTag)
+	ret.SetInlineMath(MarkdownSettings.InlineMath)
+	ret.SetGFMStrikethrough1(false)
 	return
 }
 
 func LinkTarget(htmlStr, linkBase string) (ret string) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlStr))
-	if nil != err {
+	if err != nil {
 		logging.LogErrorf("parse HTML failed: %s", err)
 		return
 	}

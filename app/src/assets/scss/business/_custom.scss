@@ -7,9 +7,15 @@
     padding: 4px 8px;
     line-height: 26px;
     min-height: 26px;
+    flex-wrap: wrap;
 
     &:hover {
       background-color: var(--b3-theme-background);
+    }
+
+    .av__checkbox {
+      width: 16px;
+      height: 26px;
     }
   }
 
@@ -34,6 +40,8 @@
   .block__logo:not(.popover__block) {
     width: 160px;
     color: var(--b3-theme-on-surface);
+    align-self: flex-start;
+    margin-top: 5px;
 
     span {
       text-overflow: ellipsis;
@@ -50,6 +58,8 @@
 
     & > .block__icon {
       cursor: grab;
+      align-self: flex-start;
+      margin-top: 5px;
 
       &:hover {
         background-color: transparent;
@@ -58,7 +68,6 @@
   }
 
   .b3-text-field--text {
-    cursor: pointer;
     transition: var(--b3-transition);
     min-height: 34px;
     background-color: transparent;

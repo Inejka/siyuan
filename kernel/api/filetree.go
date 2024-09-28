@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -32,6 +34,107 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/model"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
+
+func listDocTree(c *gin.Context) {
+	// Add kernel API `/api/filetree/listDocTree` https://github.com/siyuan-note/siyuan/issues/10482
+
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	notebook := arg["notebook"].(string)
+	if util.InvalidIDPattern(notebook, ret) {
+		return
+	}
+
+	p := arg["path"].(string)
+	var doctree []*DocFile
+	root := filepath.Join(util.WorkspaceDir, "data", notebook, p)
+	dir, err := os.ReadDir(root)
+	if err != nil {
+		ret.Code = -1
+		ret.Msg = err.Error()
+		return
+	}
+
+	ids := map[string]bool{}
+	for _, entry := range dir {
+		if entry.IsDir() {
+			if strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+
+			if !ast.IsNodeIDPattern(entry.Name()) {
+				continue
+			}
+
+			parent := &DocFile{ID: entry.Name()}
+			ids[parent.ID] = true
+			doctree = append(doctree, parent)
+
+			subPath := filepath.Join(root, entry.Name())
+			if err = walkDocTree(subPath, parent, &ids); err != nil {
+				ret.Code = -1
+				ret.Msg = err.Error()
+				return
+			}
+		} else {
+			doc := &DocFile{ID: strings.TrimSuffix(entry.Name(), ".sy")}
+			if !ids[doc.ID] {
+				doctree = append(doctree, doc)
+			}
+			ids[doc.ID] = true
+		}
+	}
+
+	ret.Data = map[string]interface{}{
+		"tree": doctree,
+	}
+}
+
+type DocFile struct {
+	ID       string     `json:"id"`
+	Children []*DocFile `json:"children,omitempty"`
+}
+
+func walkDocTree(p string, docFile *DocFile, ids *map[string]bool) (err error) {
+	dir, err := os.ReadDir(p)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range dir {
+		if entry.IsDir() {
+			if strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+
+			if !ast.IsNodeIDPattern(entry.Name()) {
+				continue
+			}
+
+			parent := &DocFile{ID: entry.Name()}
+			(*ids)[parent.ID] = true
+			docFile.Children = append(docFile.Children, parent)
+
+			subPath := filepath.Join(p, entry.Name())
+			if err = walkDocTree(subPath, parent, ids); err != nil {
+				return
+			}
+		} else {
+			doc := &DocFile{ID: strings.TrimSuffix(entry.Name(), ".sy")}
+			if !(*ids)[doc.ID] {
+				docFile.Children = append(docFile.Children, doc)
+			}
+			(*ids)[doc.ID] = true
+		}
+	}
+	return
+}
 
 func upsertIndexes(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
@@ -87,7 +190,7 @@ func doc2Heading(c *gin.Context) {
 	targetID := arg["targetID"].(string)
 	after := arg["after"].(bool)
 	srcTreeBox, srcTreePath, err := model.Doc2Heading(srcID, targetID, after)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 5000}
@@ -113,7 +216,7 @@ func heading2Doc(c *gin.Context) {
 	targetNotebook := arg["targetNoteBook"].(string)
 	targetPath := arg["targetPath"].(string)
 	srcRootBlockID, targetPath, err := model.Heading2Doc(srcHeadingID, targetNotebook, targetPath)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 5000}
@@ -123,7 +226,7 @@ func heading2Doc(c *gin.Context) {
 	model.WaitForWritingFiles()
 	luteEngine := util.NewLute()
 	tree, err := filesys.LoadTree(targetNotebook, targetPath, luteEngine)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -158,7 +261,7 @@ func li2Doc(c *gin.Context) {
 	targetNotebook := arg["targetNoteBook"].(string)
 	targetPath := arg["targetPath"].(string)
 	srcRootBlockID, targetPath, err := model.ListItem2Doc(srcListItemID, targetNotebook, targetPath)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 5000}
@@ -168,7 +271,7 @@ func li2Doc(c *gin.Context) {
 	model.WaitForWritingFiles()
 	luteEngine := util.NewLute()
 	tree, err := filesys.LoadTree(targetNotebook, targetPath, luteEngine)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -207,7 +310,7 @@ func getHPathByPath(c *gin.Context) {
 	p := arg["path"].(string)
 
 	hPath, err := model.GetHPathByPath(notebook, p)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -230,7 +333,7 @@ func getHPathsByPaths(c *gin.Context) {
 		paths = append(paths, p.(string))
 	}
 	hPath, err := model.GetHPathsByPaths(paths)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -253,12 +356,35 @@ func getHPathByID(c *gin.Context) {
 	}
 
 	hPath, err := model.GetHPathByID(id)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
 	ret.Data = hPath
+}
+
+func getPathByID(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	id := arg["id"].(string)
+	if util.InvalidIDPattern(id, ret) {
+		return
+	}
+
+	_path, err := model.GetPathByID(id)
+	if err != nil {
+		ret.Code = -1
+		ret.Msg = err.Error()
+		return
+	}
+	ret.Data = _path
 }
 
 func getFullHPathByID(c *gin.Context) {
@@ -275,7 +401,7 @@ func getFullHPathByID(c *gin.Context) {
 
 	id := arg["id"].(string)
 	hPath, err := model.GetFullHPathByID(id)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -305,7 +431,7 @@ func getIDsByHPath(c *gin.Context) {
 
 	p := arg["path"].(string)
 	ids, err := model.GetIDsByHPath(p, notebook)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -336,7 +462,7 @@ func moveDocs(c *gin.Context) {
 	callback := arg["callback"]
 
 	err := model.MoveDocs(fromPaths, toNotebook, toPath, callback)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
@@ -397,7 +523,7 @@ func renameDoc(c *gin.Context) {
 	title := arg["title"].(string)
 
 	err := model.RenameDoc(notebook, p, title)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -415,19 +541,18 @@ func duplicateDoc(c *gin.Context) {
 	}
 
 	id := arg["id"].(string)
-	tree, err := model.LoadTreeByID(id)
-	if nil != err {
+	tree, err := model.LoadTreeByBlockID(id)
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
 		return
 	}
 
-	p := tree.Path
 	notebook := tree.Box
 	box := model.Conf.Box(notebook)
 	model.DuplicateDoc(tree)
-	pushCreate(box, p, tree.Root.ID, arg)
+	pushCreate(box, tree.Path, tree.ID, arg)
 
 	ret.Data = map[string]interface{}{
 		"id":       tree.Root.ID,
@@ -459,7 +584,7 @@ func createDoc(c *gin.Context) {
 	}
 
 	tree, err := model.CreateDocByMd(notebook, p, title, md, sorts)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		ret.Data = map[string]interface{}{"closeTimeout": 7000}
@@ -486,7 +611,7 @@ func createDailyNote(c *gin.Context) {
 
 	notebook := arg["notebook"].(string)
 	p, existed, err := model.CreateDailyNote(notebook)
-	if nil != err {
+	if err != nil {
 		if model.ErrBoxNotFound == err {
 			ret.Code = 1
 		} else {
@@ -500,7 +625,7 @@ func createDailyNote(c *gin.Context) {
 	box := model.Conf.Box(notebook)
 	luteEngine := util.NewLute()
 	tree, err := filesys.LoadTree(box.ID, p, luteEngine)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -548,6 +673,12 @@ func createDocWithMd(c *gin.Context) {
 		return
 	}
 
+	tagsArg := arg["tags"]
+	var tags string
+	if nil != tagsArg {
+		tags = tagsArg.(string)
+	}
+
 	var parentID string
 	parentIDArg := arg["parentID"]
 	if nil != parentIDArg {
@@ -575,8 +706,14 @@ func createDocWithMd(c *gin.Context) {
 		hPath = "/" + hPath
 	}
 
-	id, err := model.CreateWithMarkdown(notebook, hPath, markdown, parentID, id)
-	if nil != err {
+	withMath := false
+	withMathArg := arg["withMath"]
+	if nil != withMathArg {
+		withMath = withMathArg.(bool)
+	}
+
+	id, err := model.CreateWithMarkdown(tags, notebook, hPath, markdown, parentID, id, withMath)
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -601,29 +738,47 @@ func getDocCreateSavePath(c *gin.Context) {
 
 	notebook := arg["notebook"].(string)
 	box := model.Conf.Box(notebook)
+	var docCreateSaveBox string
 	docCreateSavePathTpl := model.Conf.FileTree.DocCreateSavePath
 	if nil != box {
-		docCreateSavePathTpl = box.GetConf().DocCreateSavePath
+		boxConf := box.GetConf()
+		docCreateSaveBox = boxConf.DocCreateSaveBox
+		docCreateSavePathTpl = boxConf.DocCreateSavePath
+	}
+	if "" == docCreateSaveBox && "" == docCreateSavePathTpl {
+		docCreateSaveBox = model.Conf.FileTree.DocCreateSaveBox
+	}
+	if "" != docCreateSaveBox {
+		if nil == model.Conf.Box(docCreateSaveBox) {
+			// 如果配置的笔记本未打开或者不存在，则使用当前笔记本
+			docCreateSaveBox = notebook
+		}
+	}
+	if "" == docCreateSaveBox {
+		docCreateSaveBox = notebook
 	}
 	if "" == docCreateSavePathTpl {
 		docCreateSavePathTpl = model.Conf.FileTree.DocCreateSavePath
 	}
 	docCreateSavePathTpl = strings.TrimSpace(docCreateSavePathTpl)
-	if "../" == docCreateSavePathTpl {
-		docCreateSavePathTpl = "../Untitled"
-	}
-	if "/" == docCreateSavePathTpl {
-		docCreateSavePathTpl = "/Untitled"
+
+	if docCreateSaveBox != notebook {
+		if "" != docCreateSavePathTpl && !strings.HasPrefix(docCreateSavePathTpl, "/") {
+			// 如果配置的笔记本不是当前笔记本，则将相对路径转换为绝对路径
+			docCreateSavePathTpl = "/" + docCreateSavePathTpl
+		}
 	}
 
-	p, err := model.RenderGoTemplate(docCreateSavePathTpl)
-	if nil != err {
+	docCreateSavePath, err := model.RenderGoTemplate(docCreateSavePathTpl)
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
+
 	ret.Data = map[string]interface{}{
-		"path": p,
+		"box":  docCreateSaveBox,
+		"path": docCreateSavePath,
 	}
 }
 
@@ -638,22 +793,45 @@ func getRefCreateSavePath(c *gin.Context) {
 
 	notebook := arg["notebook"].(string)
 	box := model.Conf.Box(notebook)
-	refCreateSavePath := model.Conf.FileTree.RefCreateSavePath
+	var refCreateSaveBox string
+	refCreateSavePathTpl := model.Conf.FileTree.RefCreateSavePath
 	if nil != box {
-		refCreateSavePath = box.GetConf().RefCreateSavePath
+		boxConf := box.GetConf()
+		refCreateSaveBox = boxConf.RefCreateSaveBox
+		refCreateSavePathTpl = boxConf.RefCreateSavePath
 	}
-	if "" == refCreateSavePath {
-		refCreateSavePath = model.Conf.FileTree.RefCreateSavePath
+	if "" == refCreateSaveBox && "" == refCreateSavePathTpl {
+		refCreateSaveBox = model.Conf.FileTree.RefCreateSaveBox
+	}
+	if "" != refCreateSaveBox {
+		if nil == model.Conf.Box(refCreateSaveBox) {
+			// 如果配置的笔记本未打开或者不存在，则使用当前笔记本
+			refCreateSaveBox = notebook
+		}
+	}
+	if "" == refCreateSaveBox {
+		refCreateSaveBox = notebook
+	}
+	if "" == refCreateSavePathTpl {
+		refCreateSavePathTpl = model.Conf.FileTree.RefCreateSavePath
 	}
 
-	p, err := model.RenderGoTemplate(refCreateSavePath)
-	if nil != err {
+	if refCreateSaveBox != notebook {
+		if "" != refCreateSavePathTpl && !strings.HasPrefix(refCreateSavePathTpl, "/") {
+			// 如果配置的笔记本不是当前笔记本，则将相对路径转换为绝对路径
+			refCreateSavePathTpl = "/" + refCreateSavePathTpl
+		}
+	}
+
+	refCreateSavePath, err := model.RenderGoTemplate(refCreateSavePathTpl)
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
 	ret.Data = map[string]interface{}{
-		"path": p,
+		"box":  refCreateSaveBox,
+		"path": refCreateSavePath,
 	}
 }
 
@@ -727,7 +905,7 @@ func listDocsByPath(c *gin.Context) {
 	}
 
 	files, totals, err := model.ListDocTree(notebook, p, sortMode, flashcard, showHidden, maxListCount)
-	if nil != err {
+	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
@@ -811,7 +989,7 @@ func getDoc(c *gin.Context) {
 		return
 	}
 
-	if nil != err {
+	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
 		return

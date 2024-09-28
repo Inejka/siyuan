@@ -44,7 +44,7 @@
 
     &.layout__dockr {
       border: 1px solid var(--b3-border-color);
-      box-shadow: -8px 0px 24px rgb(140 149 159 / 20%);
+      box-shadow: -8px 0 24px rgb(140 149 159 / 20%);
       border-right: 0;
       border-radius: var(--b3-border-radius-b) 0 0 var(--b3-border-radius-b);
       overflow: hidden;
@@ -109,7 +109,7 @@
     height: 6px;
     width: 100%;
     position: relative;
-    z-index: 2;
+    z-index: 4; // 需大于 #sidebarContainer https://github.com/siyuan-note/siyuan/issues/11759
 
     &:hover:after {
       background-color: var(--b3-scroll-color);
@@ -368,6 +368,11 @@
     border-top: .5px solid var(--b3-border-color);
   }
 
+  &__items {
+    min-height: 26px;
+    min-width: 26px;
+  }
+
   svg {
     height: 14px;
     width: 14px;
@@ -397,6 +402,7 @@
     display: flex;
     border-radius: var(--b3-border-radius);
     margin: 7px;
+    cursor: pointer;
 
     &--pin {
       opacity: 0;
