@@ -30,6 +30,7 @@ import (
 	"github.com/88250/lute/parse"
 	"github.com/emirpasic/gods/sets/hashset"
 	"github.com/siyuan-note/logging"
+	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/search"
 	"github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
@@ -37,26 +38,18 @@ import (
 )
 
 func RefreshBacklink(id string) {
-	WaitForWritingFiles()
+	FlushTxQueue()
 	refreshRefsByDefID(id)
 }
 
 func refreshRefsByDefID(defID string) {
 	refs := sql.QueryRefsByDefID(defID, false)
-	trees := map[string]*parse.Tree{}
+	var rootIDs []string
 	for _, ref := range refs {
-		tree := trees[ref.RootID]
-		if nil != tree {
-			continue
-		}
-
-		var loadErr error
-		tree, loadErr = LoadTreeByBlockID(ref.RootID)
-		if nil != loadErr {
-			logging.LogErrorf("refresh tree refs failed: %s", loadErr)
-			continue
-		}
-		trees[ref.RootID] = tree
+		rootIDs = append(rootIDs, ref.RootID)
+	}
+	trees := filesys.LoadTrees(rootIDs)
+	for _, tree := range trees {
 		sql.UpdateRefsTreeQueue(tree)
 	}
 }
@@ -65,6 +58,8 @@ type Backlink struct {
 	DOM        string       `json:"dom"`
 	BlockPaths []*BlockPath `json:"blockPaths"`
 	Expand     bool         `json:"expand"`
+
+	node *ast.Node // 仅用于按文档内容顺序排序
 }
 
 func GetBackmentionDoc(defID, refTreeID, keyword string, containChildren bool) (ret []*Backlink) {
@@ -82,33 +77,37 @@ func GetBackmentionDoc(defID, refTreeID, keyword string, containChildren bool) (
 
 	linkRefs, _, excludeBacklinkIDs := buildLinkRefs(rootID, refs, keyword)
 	tmpMentions, mentionKeywords := buildTreeBackmention(sqlBlock, linkRefs, keyword, excludeBacklinkIDs, beforeLen)
-	luteEngine := NewLute()
-	treeCache := map[string]*parse.Tree{}
+	luteEngine := util.NewLute()
 	var mentions []*Block
 	for _, mention := range tmpMentions {
 		if mention.RootID == refTreeID {
 			mentions = append(mentions, mention)
 		}
 	}
-
-	if "" != keyword {
-		mentionKeywords = append(mentionKeywords, keyword)
-	}
-	mentionKeywords = gulu.Str.RemoveDuplicatedElem(mentionKeywords)
+	var mentionBlockIDs []string
 	for _, mention := range mentions {
-		refTree := treeCache[mention.RootID]
-		if nil == refTree {
-			var loadErr error
-			refTree, loadErr = LoadTreeByBlockID(mention.ID)
-			if nil != loadErr {
-				logging.LogWarnf("load ref tree [%s] failed: %s", mention.ID, loadErr)
-				continue
-			}
-			treeCache[mention.RootID] = refTree
-		}
+		mentionBlockIDs = append(mentionBlockIDs, mention.ID)
+	}
+	mentionBlockIDs = gulu.Str.RemoveDuplicatedElem(mentionBlockIDs)
 
-		backlink := buildBacklink(mention.ID, refTree, mentionKeywords, luteEngine)
-		ret = append(ret, backlink)
+	mentionKeywords = strings.Split(keyword, " ")
+	mentionKeywords = gulu.Str.RemoveDuplicatedElem(mentionKeywords)
+
+	var refTree *parse.Tree
+	trees := filesys.LoadTrees(mentionBlockIDs)
+	for id, tree := range trees {
+		backlink := buildBacklink(id, tree, mentionKeywords, luteEngine)
+		if nil != backlink {
+			ret = append(ret, backlink)
+		}
+		if nil != tree && nil == refTree {
+			refTree = tree
+		}
+	}
+
+	if 0 < len(trees) {
+		sortBacklinks(ret, refTree)
+		filterBlockPaths(ret)
 	}
 	return
 }
@@ -138,16 +137,48 @@ func GetBacklinkDoc(defID, refTreeID, keyword string, containChildren bool) (ret
 		return
 	}
 
-	luteEngine := NewLute()
+	luteEngine := util.NewLute()
 	for _, linkRef := range linkRefs {
-		var keywords []string
-		if "" != keyword {
-			keywords = append(keywords, keyword)
-		}
+		keywords := strings.Split(keyword, " ")
 		backlink := buildBacklink(linkRef.ID, refTree, keywords, luteEngine)
-		ret = append(ret, backlink)
+		if nil != backlink {
+			ret = append(ret, backlink)
+		}
+	}
+
+	sortBacklinks(ret, refTree)
+	filterBlockPaths(ret)
+	return
+}
+
+func filterBlockPaths(blockLinks []*Backlink) {
+	for _, b := range blockLinks {
+		if 2 == len(b.BlockPaths) {
+			// 根下只有一层则不显示
+			b.BlockPaths = []*BlockPath{}
+		}
 	}
 	return
+}
+
+func sortBacklinks(backlinks []*Backlink, tree *parse.Tree) {
+	contentSorts := map[string]int{}
+	sortVal := 0
+	ast.Walk(tree.Root, func(n *ast.Node, entering bool) ast.WalkStatus {
+		if !entering || !n.IsBlock() {
+			return ast.WalkContinue
+		}
+
+		contentSorts[n.ID] = sortVal
+		sortVal++
+		return ast.WalkContinue
+	})
+
+	sort.Slice(backlinks, func(i, j int) bool {
+		s1 := contentSorts[backlinks[i].node.ID]
+		s2 := contentSorts[backlinks[j].node.ID]
+		return s1 < s2
+	})
 }
 
 func buildBacklink(refID string, refTree *parse.Tree, keywords []string, luteEngine *lute.Lute) (ret *Backlink) {
@@ -182,11 +213,14 @@ func buildBacklink(refID string, refTree *parse.Tree, keywords []string, luteEng
 	}
 
 	dom := renderBlockDOMByNodes(renderNodes, luteEngine)
-	ret = &Backlink{
-		DOM:        dom,
-		BlockPaths: buildBlockBreadcrumb(n, nil),
-		Expand:     expand,
+	var blockPaths []*BlockPath
+	if (nil != n.Parent && ast.NodeDocument != n.Parent.Type) || (ast.NodeHeading != n.Type && 0 < treenode.HeadingLevel(n)) {
+		blockPaths = buildBlockBreadcrumb(n, nil, false)
 	}
+	if 1 > len(blockPaths) {
+		blockPaths = []*BlockPath{}
+	}
+	ret = &Backlink{DOM: dom, BlockPaths: blockPaths, Expand: expand, node: n}
 	return
 }
 
@@ -240,7 +274,7 @@ func getBacklinkRenderNodes(n *ast.Node) (ret []*ast.Node, expand bool) {
 	return
 }
 
-func GetBacklink2(id, keyword, mentionKeyword string, sortMode, mentionSortMode int) (boxID string, backlinks, backmentions []*Path, linkRefsCount, mentionsCount int) {
+func GetBacklink2(id, keyword, mentionKeyword string, sortMode, mentionSortMode int, containChildren bool) (boxID string, backlinks, backmentions []*Path, linkRefsCount, mentionsCount int) {
 	keyword = strings.TrimSpace(keyword)
 	mentionKeyword = strings.TrimSpace(mentionKeyword)
 	backlinks, backmentions = []*Path{}, []*Path{}
@@ -252,12 +286,11 @@ func GetBacklink2(id, keyword, mentionKeyword string, sortMode, mentionSortMode 
 	rootID := sqlBlock.RootID
 	boxID = sqlBlock.Box
 
-	refs := sql.QueryRefsByDefID(id, true)
+	refs := sql.QueryRefsByDefID(id, containChildren)
 	refs = removeDuplicatedRefs(refs)
 
 	linkRefs, linkRefsCount, excludeBacklinkIDs := buildLinkRefs(rootID, refs, keyword)
 	tmpBacklinks := toFlatTree(linkRefs, 0, "backlink", nil)
-
 	for _, l := range tmpBacklinks {
 		l.Blocks = nil
 		backlinks = append(backlinks, l)
@@ -339,7 +372,7 @@ func GetBacklink2(id, keyword, mentionKeyword string, sortMode, mentionSortMode 
 	return
 }
 
-func GetBacklink(id, keyword, mentionKeyword string, beforeLen int) (boxID string, linkPaths, mentionPaths []*Path, linkRefsCount, mentionsCount int) {
+func GetBacklink(id, keyword, mentionKeyword string, beforeLen int, containChildren bool) (boxID string, linkPaths, mentionPaths []*Path, linkRefsCount, mentionsCount int) {
 	linkPaths = []*Path{}
 	mentionPaths = []*Path{}
 
@@ -351,7 +384,7 @@ func GetBacklink(id, keyword, mentionKeyword string, beforeLen int) (boxID strin
 	boxID = sqlBlock.Box
 
 	var links []*Block
-	refs := sql.QueryRefsByDefID(id, true)
+	refs := sql.QueryRefsByDefID(id, containChildren)
 	refs = removeDuplicatedRefs(refs)
 
 	// 为了减少查询，组装好 IDs 后一次查出
@@ -533,7 +566,7 @@ func buildLinkRefs(defRootID string, refs []*sql.Ref, keyword string) (ret []*Bl
 			if nil != refBlock && p.FContent == refBlock.Content { // 使用内容判断是否是列表项下第一个子块
 				// 如果是列表项下第一个子块，则后续会通过列表项传递或关联处理，所以这里就不处理这个段落了
 				processedParagraphs.Add(p.ID)
-				if !strings.Contains(p.Content, keyword) {
+				if !matchBacklinkKeyword(p, keyword) {
 					refsCount--
 					continue
 				}
@@ -549,7 +582,7 @@ func buildLinkRefs(defRootID string, refs []*sql.Ref, keyword string) (ret []*Bl
 				}
 			}
 
-			if !strings.Contains(ref.Content, keyword) {
+			if !matchBacklinkKeyword(ref, keyword) {
 				refsCount--
 				continue
 			}
@@ -560,6 +593,22 @@ func buildLinkRefs(defRootID string, refs []*sql.Ref, keyword string) (ret []*Bl
 		}
 	}
 	return
+}
+
+func matchBacklinkKeyword(block *Block, keyword string) bool {
+	keywords := strings.Split(keyword, " ")
+	for _, k := range keywords {
+		k = strings.ToLower(k)
+		if strings.Contains(strings.ToLower(block.FContent), k) ||
+			strings.Contains(strings.ToLower(path.Base(block.HPath)), k) ||
+			strings.Contains(strings.ToLower(block.Name), k) ||
+			strings.Contains(strings.ToLower(block.Alias), k) ||
+			strings.Contains(strings.ToLower(block.Memo), k) ||
+			strings.Contains(strings.ToLower(block.Tag), k) {
+			return true
+		}
+	}
+	return false
 }
 
 func removeDuplicatedRefs(refs []*sql.Ref) (ret []*sql.Ref) {

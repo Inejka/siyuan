@@ -63,7 +63,7 @@ func generateFileHistory() {
 		return
 	}
 
-	WaitForWritingFiles()
+	FlushTxQueue()
 
 	// 生成文档历史
 	for _, box := range Conf.GetOpenedBoxes() {
@@ -225,7 +225,7 @@ func RollbackDocHistory(boxID, historyPath string) (err error) {
 		return
 	}
 
-	WaitForWritingFiles()
+	FlushTxQueue()
 
 	srcPath := historyPath
 	var destPath, parentHPath string
@@ -295,7 +295,7 @@ func RollbackDocHistory(boxID, historyPath string) (err error) {
 	}
 
 	go func() {
-		sql.WaitForWritingDatabase()
+		sql.FlushQueue()
 
 		tree, _ = LoadTreeByBlockID(id)
 		if nil == tree {
@@ -315,6 +315,19 @@ func RollbackDocHistory(boxID, historyPath string) (err error) {
 			"refText": refText,
 		}
 		util.PushEvent(evt)
+
+		// 收集引用的定义块 ID
+		refDefIDs := getRefDefIDs(tree.Root)
+		// 推送定义节点引用计数
+		for _, defID := range refDefIDs {
+			defTree, _ := LoadTreeByBlockID(defID)
+			if nil != defTree {
+				defNode := treenode.GetNodeInTree(defTree, defID)
+				if nil != defNode {
+					task.AppendAsyncTaskWithDelay(task.SetDefRefCount, 1*time.Second, refreshRefCount, defTree.ID, defNode.ID)
+				}
+			}
+		}
 	}()
 	return nil
 }
@@ -435,6 +448,13 @@ func FullTextSearchHistoryItems(created, query, box, op string, typ int) (ret []
 	table := "histories_fts_case_insensitive"
 	stmt := "SELECT * FROM " + table + " WHERE "
 	stmt += buildSearchHistoryQueryFilter(query, op, box, table, typ)
+
+	_, parseErr := strconv.Atoi(created)
+	if nil != parseErr {
+		ret = []*HistoryItem{}
+		return
+	}
+
 	stmt += " AND created = '" + created + "' ORDER BY created DESC LIMIT " + fmt.Sprintf("%d", fileHistoryPageSize)
 	sqlHistories := sql.SelectHistoriesRawStmt(stmt)
 	ret = fromSQLHistories(sqlHistories)
@@ -458,6 +478,10 @@ func buildSearchHistoryQueryFilter(query, op, box, table string, typ int) (stmt 
 	}
 	if "all" != op {
 		stmt += " AND op = '" + op + "'"
+	}
+
+	if "%" != box && !ast.IsNodeIDPattern(box) {
+		box = "%"
 	}
 
 	if HistoryTypeDocName == typ || HistoryTypeDoc == typ || HistoryTypeDocID == typ {

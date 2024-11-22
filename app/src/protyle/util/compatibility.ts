@@ -8,7 +8,11 @@ export const openByMobile = (uri: string) => {
     }
     if (isInIOS()) {
         if (uri.startsWith("assets/")) {
-            window.webkit.messageHandlers.openLink.postMessage(location.origin + "/" + uri);
+            // iOS 16.7 之前的版本，uri 需要 encodeURIComponent
+            window.webkit.messageHandlers.openLink.postMessage(location.origin + "/assets/" + encodeURIComponent(uri.replace("assets/", "")));
+        } else if (uri.startsWith("/")) {
+            // 导出 zip 返回的是已经 encode 过的，因此不能再 encode
+            window.webkit.messageHandlers.openLink.postMessage(location.origin + uri);
         } else {
             try {
                 new URL(uri);
@@ -108,6 +112,10 @@ export const isHuawei = () => {
     return window.siyuan.config.system.osPlatform.toLowerCase().indexOf("huawei") > -1;
 };
 
+export const isDisabledFeature = (feature: string): boolean => {
+    return window.siyuan.config.system.disabledFeatures?.indexOf(feature) > -1;
+};
+
 export const isIPhone = () => {
     return navigator.userAgent.indexOf("iPhone") > -1;
 };
@@ -200,12 +208,18 @@ export const getLocalStorage = (cb: () => void) => {
         };
         defaultStorage[Constants.LOCAL_LAYOUTS] = [];   // {name: "", layout:{}, time: number, filespaths: filesPath[]}
         defaultStorage[Constants.LOCAL_AI] = [];   // {name: "", memo: ""}
+        defaultStorage[Constants.LOCAL_PLUGIN_DOCKS] = {};  // { pluginName: {dockId: IPluginDockTab}}
         defaultStorage[Constants.LOCAL_PLUGINTOPUNPIN] = [];
         defaultStorage[Constants.LOCAL_OUTLINE] = {keepExpand: true};
         defaultStorage[Constants.LOCAL_FILEPOSITION] = {}; // {id: IScrollAttr}
         defaultStorage[Constants.LOCAL_DIALOGPOSITION] = {}; // {id: IPosition}
         defaultStorage[Constants.LOCAL_HISTORY] = {
-            notebookId: "%", type: 0, operation: "all"
+            notebookId: "%",
+            type: 0,
+            operation: "all",
+            sideWidth: "256px",
+            sideDocWidth: "256px",
+            sideDiffWidth: "256px",
         };
         defaultStorage[Constants.LOCAL_FLASHCARD] = {
             fullscreen: false
@@ -233,6 +247,14 @@ export const getLocalStorage = (cb: () => void) => {
         };
         defaultStorage[Constants.LOCAL_DOCINFO] = {
             id: "",
+        };
+        defaultStorage[Constants.LOCAL_IMAGES] = {
+            file: "1f4c4",
+            note: "1f5c3",
+            folder: "1f4d1"
+        };
+        defaultStorage[Constants.LOCAL_EMOJIS] = {
+            currentTab: "emoji"
         };
         defaultStorage[Constants.LOCAL_FONTSTYLES] = [];
         defaultStorage[Constants.LOCAL_FILESPATHS] = [];    // filesPath[]
@@ -270,7 +292,8 @@ export const getLocalStorage = (cb: () => void) => {
             Constants.LOCAL_SEARCHDATA, Constants.LOCAL_ZOOM, Constants.LOCAL_LAYOUTS, Constants.LOCAL_AI,
             Constants.LOCAL_PLUGINTOPUNPIN, Constants.LOCAL_SEARCHASSET, Constants.LOCAL_FLASHCARD,
             Constants.LOCAL_DIALOGPOSITION, Constants.LOCAL_SEARCHUNREF, Constants.LOCAL_HISTORY,
-            Constants.LOCAL_OUTLINE, Constants.LOCAL_FILEPOSITION, Constants.LOCAL_FILESPATHS].forEach((key) => {
+            Constants.LOCAL_OUTLINE, Constants.LOCAL_FILEPOSITION, Constants.LOCAL_FILESPATHS, Constants.LOCAL_IMAGES,
+            Constants.LOCAL_PLUGIN_DOCKS, Constants.LOCAL_EMOJIS].forEach((key) => {
             if (typeof response.data[key] === "string") {
                 try {
                     const parseData = JSON.parse(response.data[key]);

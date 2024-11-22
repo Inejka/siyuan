@@ -437,7 +437,6 @@ export class Backlink extends Model {
                 defID: this.blockId,
                 refTreeID: docId,
                 keyword: isMention ? this.inputsElement[1].value : this.inputsElement[0].value,
-                containChildren: true
             }, (response) => {
                 svgElement.removeAttribute("disabled");
                 svgElement.classList.add("b3-list-item__arrow--open");
@@ -466,9 +465,6 @@ export class Backlink extends Model {
         if (!this.blockId) {
             return;
         }
-        this.editors.forEach(item => {
-            item.destroy();
-        });
         const element = this.element.querySelector('.block__icon[data-type="refresh"] svg');
         element.classList.add("fn__rotate");
         fetchPost("/api/ref/refreshBacklink", {

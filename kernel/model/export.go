@@ -77,7 +77,7 @@ func ExportAv2CSV(avID, blockID string) (zipPath string, err error) {
 	}
 
 	name := util.FilterFileName(getAttrViewName(attrView))
-	table := sql.RenderAttributeViewTable(attrView, view, "", GetBlockAttrsWithoutWaitWriting)
+	table := sql.RenderAttributeViewTable(attrView, view, "")
 
 	// 遵循视图过滤和排序规则 Use filtering and sorting of current view settings when exporting database blocks https://github.com/siyuan-note/siyuan/issues/10474
 	table.FilterRows(attrView)
@@ -218,8 +218,6 @@ func Export2Liandi(id string) (err error) {
 	assets := assetsLinkDestsInTree(tree)
 	embedAssets := assetsLinkDestsInQueryEmbedNodes(tree)
 	assets = append(assets, embedAssets...)
-	avAssets := assetsLinkDestsInAttributeViewNodes(tree)
-	assets = append(assets, avAssets...)
 	assets = gulu.Str.RemoveDuplicatedElem(assets)
 	_, err = uploadAssets2Cloud(assets, bizTypeExport2Liandi)
 	if err != nil {
@@ -255,8 +253,7 @@ func Export2Liandi(id string) (err error) {
 		case 404:
 			foundArticle = false
 		default:
-			msg := fmt.Sprintf("get liandi article info failed [sc=%d]", resp.StatusCode)
-			err = errors.New(msg)
+			err = errors.New(fmt.Sprintf("get liandi article info failed [sc=%d]", resp.StatusCode))
 			return
 		}
 	}
@@ -315,8 +312,7 @@ func Export2Liandi(id string) (err error) {
 		}
 	}
 
-	msg := fmt.Sprintf(Conf.Language(181), util.GetCloudAccountServer()+"/article/"+articleId)
-	util.PushMsg(msg, 7000)
+	util.PushMsg(fmt.Sprintf(Conf.Language(181), util.GetCloudAccountServer()+"/article/"+articleId), 7000)
 	return
 }
 
@@ -480,7 +476,7 @@ func ExportData() (zipPath string, err error) {
 }
 
 func exportData(exportFolder string) (zipPath string, err error) {
-	WaitForWritingFiles()
+	FlushTxQueue()
 
 	logging.LogInfof("exporting data...")
 
@@ -505,8 +501,7 @@ func exportData(exportFolder string) (zipPath string, err error) {
 	}
 
 	zipCallback := func(filename string) {
-		msg := Conf.language(65) + " " + fmt.Sprintf(Conf.language(70), filename)
-		util.PushEndlessProgress(msg)
+		util.PushEndlessProgress(Conf.language(65) + " " + fmt.Sprintf(Conf.language(70), filename))
 	}
 
 	if err = zip.AddDirectory(baseFolderName, exportFolder, zipCallback); err != nil {
@@ -524,7 +519,7 @@ func exportData(exportFolder string) (zipPath string, err error) {
 }
 
 func ExportResources(resourcePaths []string, mainName string) (exportFilePath string, err error) {
-	WaitForWritingFiles()
+	FlushTxQueue()
 
 	// 用于导出的临时文件夹完整路径
 	exportFolderPath := filepath.Join(util.TempDir, "export", mainName)
@@ -619,8 +614,7 @@ func ExportDocx(id, savePath string, removeAssets, merge bool) (fullPath string,
 	if "" != docxTemplate {
 		if !gulu.File.IsExist(docxTemplate) {
 			logging.LogErrorf("docx template [%s] not found", docxTemplate)
-			msg := fmt.Sprintf(Conf.Language(197), docxTemplate)
-			err = errors.New(msg)
+			err = errors.New(fmt.Sprintf(Conf.Language(197), docxTemplate))
 			return
 		}
 
@@ -633,8 +627,7 @@ func ExportDocx(id, savePath string, removeAssets, merge bool) (fullPath string,
 	output, err := pandoc.CombinedOutput()
 	if err != nil {
 		logging.LogErrorf("export docx failed: %s", gulu.Str.FromBytes(output))
-		msg := fmt.Sprintf(Conf.Language(14), gulu.Str.FromBytes(output))
-		err = errors.New(msg)
+		err = errors.New(fmt.Sprintf(Conf.Language(14), gulu.Str.FromBytes(output)))
 		return
 	}
 
@@ -1105,6 +1098,7 @@ func processPDFWatermark(pdfCtx *pdfcpu.Context, watermark bool) {
 
 	if err != nil {
 		logging.LogErrorf("parse watermark failed: %s", err)
+		util.PushErrMsg(err.Error(), 7000)
 		return
 	}
 
@@ -1388,6 +1382,30 @@ func ExportStdMarkdown(id string) string {
 		Conf.Export.AddTitle, nil)
 }
 
+func BatchExportPandocConvertZip(ids []string, pandocTo, ext string) (name, zipPath string) {
+	block := treenode.GetBlockTree(ids[0])
+	box := Conf.Box(block.BoxID)
+	baseFolderName := path.Base(block.HPath)
+	if "." == baseFolderName {
+		baseFolderName = path.Base(block.Path)
+	}
+
+	var docPaths []string
+	bts := treenode.GetBlockTrees(ids)
+	for _, bt := range bts {
+		docPaths = append(docPaths, bt.Path)
+		docFiles := box.ListFiles(strings.TrimSuffix(bt.Path, ".sy"))
+		for _, docFile := range docFiles {
+			docPaths = append(docPaths, docFile.path)
+		}
+	}
+	docPaths = util.FilterSelfChildDocs(docPaths)
+
+	zipPath = exportPandocConvertZip(false, box.ID, baseFolderName, docPaths, "gfm+footnotes+hard_line_breaks", pandocTo, ext)
+	name = strings.TrimSuffix(filepath.Base(block.Path), ".sy")
+	return
+}
+
 func ExportPandocConvertZip(id, pandocTo, ext string) (name, zipPath string) {
 	block := treenode.GetBlockTree(id)
 	if nil == block {
@@ -1412,7 +1430,7 @@ func ExportPandocConvertZip(id, pandocTo, ext string) (name, zipPath string) {
 	return
 }
 
-func BatchExportMarkdown(boxID, folderPath string) (zipPath string) {
+func ExportNotebookMarkdown(boxID, folderPath string) (zipPath string) {
 	box := Conf.Box(boxID)
 
 	var baseFolderName string
@@ -1441,8 +1459,9 @@ func BatchExportMarkdown(boxID, folderPath string) (zipPath string) {
 
 func yfm(docIAL map[string]string) string {
 	// 导出 Markdown 文件时开头附上一些元数据 https://github.com/siyuan-note/siyuan/issues/6880
-	// 导出 Markdown 时在文档头添加 YFM 开关https://github.com/siyuan-note/siyuan/issues/7727
+
 	if !Conf.Export.MarkdownYFM {
+		// 导出 Markdown 时在文档头添加 YFM 开关 https://github.com/siyuan-note/siyuan/issues/7727
 		return ""
 	}
 
@@ -1540,29 +1559,41 @@ func exportSYZip(boxID, rootDirPath, baseFolderName string, docPaths []string) (
 
 	trees := map[string]*parse.Tree{}
 	refTrees := map[string]*parse.Tree{}
-	for _, p := range docPaths {
-		docIAL := box.docIAL(p)
-		if nil == docIAL {
+	luteEngine := util.NewLute()
+	for i, p := range docPaths {
+		if !strings.HasSuffix(p, ".sy") {
 			continue
 		}
 
-		id := docIAL["id"]
-		tree, err := LoadTreeByBlockID(id)
+		tree, err := filesys.LoadTree(boxID, p, luteEngine)
 		if err != nil {
 			continue
 		}
 		trees[tree.ID] = tree
+
+		util.PushEndlessProgress(Conf.language(65) + " " + fmt.Sprintf(Conf.language(70), fmt.Sprintf("%d/%d %s", i+1, len(docPaths), tree.Root.IALAttr("title"))))
 	}
+
+	count := 1
+	treeCache := map[string]*parse.Tree{}
 	for _, tree := range trees {
-		refs := exportRefTrees(tree)
+		util.PushEndlessProgress(Conf.language(65) + " " + fmt.Sprintf(Conf.language(70), fmt.Sprintf("%d/%d %s", count, len(docPaths), tree.Root.IALAttr("title"))))
+
+		refs := map[string]*parse.Tree{}
+		exportRefTrees(tree, &refs, &treeCache)
 		for refTreeID, refTree := range refs {
 			if nil == trees[refTreeID] {
 				refTrees[refTreeID] = refTree
 			}
 		}
+		count++
 	}
 
+	util.PushEndlessProgress(Conf.Language(65))
+	count = 0
+
 	// 按文件夹结构复制选择的树
+	total := len(trees) + len(refTrees)
 	for _, tree := range trees {
 		readPath := filepath.Join(util.DataDir, tree.Box, tree.Path)
 		data, readErr := filelock.ReadFile(readPath)
@@ -1582,8 +1613,12 @@ func exportSYZip(boxID, rootDirPath, baseFolderName string, docPaths []string) (
 			logging.LogErrorf("write export file [%s] failed: %s", writePath, writeErr)
 			continue
 		}
+		count++
+
+		util.PushEndlessProgress(Conf.language(65) + " " + fmt.Sprintf(Conf.Language(66), fmt.Sprintf("%d/%d ", count, total)+tree.HPath))
 	}
 
+	count = 0
 	// 引用树放在导出文件夹根路径下
 	for treeID, tree := range refTrees {
 		readPath := filepath.Join(util.DataDir, tree.Box, tree.Path)
@@ -1599,6 +1634,9 @@ func exportSYZip(boxID, rootDirPath, baseFolderName string, docPaths []string) (
 			logging.LogErrorf("write export file [%s] failed: %s", writePath, writeErr)
 			continue
 		}
+		count++
+
+		util.PushEndlessProgress(Conf.language(65) + " " + fmt.Sprintf(Conf.Language(66), fmt.Sprintf("%d/%d ", count, total)+tree.HPath))
 	}
 
 	// 将引用树合并到选择树中，以便后面一次性导出资源文件
@@ -1613,10 +1651,14 @@ func exportSYZip(boxID, rootDirPath, baseFolderName string, docPaths []string) (
 		assets = append(assets, assetsLinkDestsInTree(tree)...)
 		titleImgPath := treenode.GetDocTitleImgPath(tree.Root) // Export .sy.zip doc title image is not exported https://github.com/siyuan-note/siyuan/issues/8748
 		if "" != titleImgPath {
-			assets = append(assets, titleImgPath)
+			if util.IsAssetLinkDest([]byte(titleImgPath)) {
+				assets = append(assets, titleImgPath)
+			}
 		}
 
 		for _, asset := range assets {
+			util.PushEndlessProgress(Conf.language(65) + " " + fmt.Sprintf(Conf.language(70), asset))
+
 			asset = string(html.DecodeDestination([]byte(asset)))
 			if strings.Contains(asset, "?") {
 				asset = asset[:strings.LastIndex(asset, "?")]
@@ -1650,9 +1692,6 @@ func exportSYZip(boxID, rootDirPath, baseFolderName string, docPaths []string) (
 			}
 
 			copiedAssets.Add(asset)
-
-			msg := Conf.language(65) + " " + fmt.Sprintf(Conf.language(70), asset)
-			util.PushEndlessProgress(msg)
 		}
 	}
 
@@ -1689,7 +1728,7 @@ func exportSYZip(boxID, rootDirPath, baseFolderName string, docPaths []string) (
 				case av.KeyTypeMAsset: // 导出资源文件列 https://github.com/siyuan-note/siyuan/issues/9919
 					for _, value := range keyValues.Values {
 						for _, asset := range value.MAsset {
-							if !treenode.IsRelativePath([]byte(asset.Content)) {
+							if !util.IsAssetLinkDest([]byte(asset.Content)) {
 								continue
 							}
 
@@ -1785,8 +1824,7 @@ func exportSYZip(boxID, rootDirPath, baseFolderName string, docPaths []string) (
 	}
 
 	zipCallback := func(filename string) {
-		msg := Conf.language(65) + " " + fmt.Sprintf(Conf.language(70), filename)
-		util.PushEndlessProgress(msg)
+		util.PushEndlessProgress(Conf.language(65) + " " + fmt.Sprintf(Conf.language(70), filename))
 	}
 
 	if err = zip.AddDirectory(baseFolderName, exportFolder, zipCallback); err != nil {
@@ -2243,7 +2281,7 @@ func exportTree(tree *parse.Tree, wysiwyg, keepFold, avHiddenCol bool,
 			return ast.WalkContinue
 		}
 
-		table := sql.RenderAttributeViewTable(attrView, view, "", GetBlockAttrsWithoutWaitWriting)
+		table := sql.RenderAttributeViewTable(attrView, view, "")
 
 		// 遵循视图过滤和排序规则 Use filtering and sorting of current view settings when exporting database blocks https://github.com/siyuan-note/siyuan/issues/10474
 		table.FilterRows(attrView)
@@ -2722,13 +2760,7 @@ type refAsFootnotes struct {
 	refAnchorText string
 }
 
-func exportRefTrees(tree *parse.Tree) (ret map[string]*parse.Tree) {
-	ret = map[string]*parse.Tree{}
-	exportRefTrees0(tree, &ret)
-	return
-}
-
-func exportRefTrees0(tree *parse.Tree, retTrees *map[string]*parse.Tree) {
+func exportRefTrees(tree *parse.Tree, retTrees, treeCache *map[string]*parse.Tree) {
 	if nil != (*retTrees)[tree.ID] {
 		return
 	}
@@ -2748,12 +2780,20 @@ func exportRefTrees0(tree *parse.Tree, retTrees *map[string]*parse.Tree) {
 			if nil == defBlock {
 				return ast.WalkSkipChildren
 			}
-			defTree, err := LoadTreeByBlockID(defBlock.RootID)
-			if err != nil {
-				return ast.WalkSkipChildren
+
+			var defTree *parse.Tree
+			var err error
+			if (*treeCache)[defBlock.RootID] != nil {
+				defTree = (*treeCache)[defBlock.RootID]
+			} else {
+				defTree, err = LoadTreeByBlockID(defBlock.RootID)
+				if err != nil {
+					return ast.WalkSkipChildren
+				}
+				(*treeCache)[defBlock.RootID] = defTree
 			}
 
-			exportRefTrees0(defTree, retTrees)
+			exportRefTrees(defTree, retTrees, treeCache)
 		} else if ast.NodeAttributeView == n.Type {
 			// 导出数据库所在文档时一并导出绑定块所在文档
 			// Export the binding block docs when exporting the doc where the database is located https://github.com/siyuan-note/siyuan/issues/11486
@@ -2779,12 +2819,19 @@ func exportRefTrees0(tree *parse.Tree, retTrees *map[string]*parse.Tree) {
 					continue
 				}
 
-				defTree, _ := LoadTreeByBlockID(defBlock.RootID)
-				if nil == defTree {
-					continue
+				var defTree *parse.Tree
+				var err error
+				if (*treeCache)[defBlock.RootID] != nil {
+					defTree = (*treeCache)[defBlock.RootID]
+				} else {
+					defTree, err = LoadTreeByBlockID(defBlock.RootID)
+					if err != nil {
+						continue
+					}
+					(*treeCache)[defBlock.RootID] = defTree
 				}
 
-				exportRefTrees0(defTree, retTrees)
+				exportRefTrees(defTree, retTrees, treeCache)
 			}
 		}
 		return ast.WalkContinue
@@ -3000,7 +3047,7 @@ func getExportBlockRefLinkText(blockRef *ast.Node, blockRefTextLeft, blockRefTex
 	if "" == linkText {
 		linkText = sql.GetRefText(defID)
 	}
-	linkText = html.UnescapeHTMLStr(linkText) // 块引锚文本导出时 `&` 变为实体 `&amp;` https://github.com/siyuan-note/siyuan/issues/7659
+	linkText = util.UnescapeHTML(linkText) // 块引锚文本导出时 `&` 变为实体 `&amp;` https://github.com/siyuan-note/siyuan/issues/7659
 	if Conf.Editor.BlockRefDynamicAnchorTextMaxLen < utf8.RuneCountInString(linkText) {
 		linkText = gulu.Str.SubStr(linkText, Conf.Editor.BlockRefDynamicAnchorTextMaxLen) + "..."
 	}
@@ -3039,7 +3086,7 @@ func getDestViewVal(attrView *av.AttributeView, keyID, blockID string) *av.Table
 		return nil
 	}
 
-	destTable := sql.RenderAttributeViewTable(destAv, destView, "", GetBlockAttrsWithoutWaitWriting)
+	destTable := sql.RenderAttributeViewTable(destAv, destView, "")
 	if nil == destTable {
 		return nil
 	}
