@@ -40,6 +40,7 @@ func createDocsByHPath(boxID, hPath, content, parentID, id string) (retID string
 	retID = id
 
 	hPath = strings.TrimSuffix(hPath, ".sy")
+	hPath = util.TrimSpaceInPath(hPath)
 	if "" != parentID {
 		// The save path is incorrect when creating a sub-doc by ref in a doc with the same name https://github.com/siyuan-note/siyuan/issues/8138
 		// 在指定了父文档 ID 的情况下优先查找父文档
@@ -152,7 +153,7 @@ func toFlatTree(blocks []*Block, baseDepth int, typ string, tree *parse.Tree) (r
 		treeNode := &Path{
 			ID:       root.ID,
 			Box:      root.Box,
-			Name:     util.EscapeHTML(path.Base(root.HPath)),
+			Name:     path.Base(root.HPath),
 			NodeType: root.Type,
 			Type:     typ,
 			SubType:  root.SubType,
@@ -196,7 +197,7 @@ func toSubTree(blocks []*Block, keyword string) (ret []*Path) {
 		treeNode := &Path{
 			ID:       root.ID,
 			Box:      root.Box,
-			Name:     util.EscapeHTML(path.Base(root.HPath)),
+			Name:     path.Base(root.HPath),
 			Type:     "backlink",
 			NodeType: "NodeDocument",
 			SubType:  root.SubType,

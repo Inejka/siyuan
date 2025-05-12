@@ -45,6 +45,7 @@ export const openFileById = async (options: {
     keepCursor?: boolean
     zoomIn?: boolean
     removeCurrentTab?: boolean
+    openNewTab?: boolean
     afterOpen?: (model: Model) => void
 }) => {
     const response = await fetchSyncPost("/api/block/getBlockInfo", {id: options.id});
@@ -67,7 +68,8 @@ export const openFileById = async (options: {
         zoomIn: options.zoomIn,
         keepCursor: options.keepCursor,
         removeCurrentTab: options.removeCurrentTab,
-        afterOpen: options.afterOpen
+        afterOpen: options.afterOpen,
+        openNewTab: options.openNewTab
     });
 };
 
@@ -155,7 +157,7 @@ export const openFile = async (options: IOpenFileOptions) => {
         if (search) {
             return search.parent;
         }
-    } else if (!options.position) {
+    } else if (!options.position && !options.openNewTab) {
         let editor: Editor;
         let activeEditor: Editor;
         allModels.editor.find((item) => {
@@ -276,7 +278,7 @@ export const openFile = async (options: IOpenFileOptions) => {
             }
             wnd.showHeading();
             if (options.afterOpen) {
-                options.afterOpen(createdTab.model);
+                options.afterOpen(createdTab ? createdTab.model : undefined);
             }
             return createdTab;
         }
@@ -380,16 +382,25 @@ const switchEditor = (editor: Editor, options: IOpenFileOptions, allModels: IMod
     } else {
         // 点击大纲产生滚动时会动态加载内容，最终导致定位不准确
         preventScroll(editor.editor.protyle);
+        editor.editor.protyle.observerLoad?.disconnect();
         if (options.action?.includes(Constants.CB_GET_HL)) {
             highlightById(editor.editor.protyle, options.id, true);
         } else if (options.action?.includes(Constants.CB_GET_FOCUS)) {
             if (nodeElement) {
                 const newRange = focusBlock(nodeElement);
                 if (newRange) {
-                    // 需要更新 range，否则文档大纲点击导致切换页签时因为 resize 中 `保持光标位置不变` 会导致光标跳动
                     editor.editor.protyle.toolbar.range = newRange;
                 }
                 scrollCenter(editor.editor.protyle, nodeElement, true);
+                const resizeObserver = new ResizeObserver(() => {
+                    if (document.contains(nodeElement)) {
+                        scrollCenter(editor.editor.protyle, nodeElement, true);
+                    }
+                });
+                setTimeout(() => {
+                    resizeObserver.disconnect();
+                }, 1000 * 3);
+                resizeObserver.observe(editor.editor.protyle.wysiwyg.element);
             } else if (editor.editor.protyle.block.rootID === options.id) {
                 // 由于 https://github.com/siyuan-note/siyuan/issues/5420，移除定位
             } else if (editor.editor.protyle.toolbar.range) {
@@ -698,6 +709,7 @@ export const openBy = (url: string, type: "folder" | "app") => {
     } else {
         address = url.replace("file://", "");
     }
+
     // 拖入文件名包含 `)` 、`(` 的文件以 `file://` 插入后链接解析错误 https://github.com/siyuan-note/siyuan/issues/5786
     address = address.replace(/\\\)/g, ")").replace(/\\\(/g, "(");
     if (type === "app") {

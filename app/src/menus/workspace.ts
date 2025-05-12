@@ -7,7 +7,7 @@ import {getOpenNotebookCount, originalPath, pathPosix, showFileInFolder} from ".
 import {fetchNewDailyNote, mountHelp, newDailyNote} from "../util/mount";
 import {fetchPost} from "../util/fetch";
 import {Constants} from "../constants";
-import {isInAndroid, isInIOS, isIPad, setStorageVal, writeText} from "../protyle/util/compatibility";
+import {isInAndroid, isInHarmony, isInIOS, isIPad, setStorageVal, writeText} from "../protyle/util/compatibility";
 import {openCard} from "../card/openCard";
 import {openSetting} from "../config";
 import {getAllDocks} from "../layout/getAll";
@@ -317,7 +317,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                 });
             });
             /// #endif
-            if (!isBrowser() || isInIOS() || isInAndroid()) {
+            if (!isBrowser() || isInIOS() || isInAndroid() || isInHarmony()) {
                 window.siyuan.menus.menu.append(new MenuItem({
                     id: "workspaceList",
                     label: window.siyuan.languages.workspaceList,
@@ -497,7 +497,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
             }
         }).element);
         /// #endif
-        if (isIPad() || isInAndroid() || !isBrowser()) {
+        if (isIPad() || isInAndroid() || isInHarmony() || !isBrowser()) {
             window.siyuan.menus.menu.append(new MenuItem({id: "separator_3", type: "separator"}).element);
             window.siyuan.menus.menu.append(new MenuItem({
                 id: "safeQuit",
@@ -534,6 +534,42 @@ const openWorkspace = (workspace: string) => {
 
 const workspaceItem = (item: IWorkspace) => {
     /// #if !BROWSER
+    const submenu = [{
+        id: "showInFolder",
+        icon: "iconFolder",
+        label: window.siyuan.languages.showInFolder,
+        click() {
+            showFileInFolder(item.path);
+        }
+    }, {
+        id: "copyPath",
+        icon: "iconCopy",
+        label: window.siyuan.languages.copyPath,
+        click() {
+            writeText(item.path);
+            showMessage(window.siyuan.languages.copied);
+        }
+    }];
+    if (item.path !== window.siyuan.config.system.workspaceDir) {
+        submenu.splice(0, 0, {
+            id: "openBy",
+            icon: "iconOpenWindow",
+            label: window.siyuan.languages.openBy,
+            click() {
+                openWorkspace(item.path);
+            }
+        });
+        if (item.closed) {
+            submenu.push({
+                id: "removeWorkspaceTip",
+                icon: "iconTrashcan",
+                label: window.siyuan.languages.removeWorkspaceTip,
+                click() {
+                    fetchPost("/api/system/removeWorkspaceDir", {path: item.path});
+                }
+            });
+        }
+    }
     return {
         label: `<div aria-label="${item.path}" class="fn__ellipsis ariaLabel" style="max-width: 256px">
     ${originalPath().basename(item.path)}
@@ -541,36 +577,7 @@ const workspaceItem = (item: IWorkspace) => {
         current: !item.closed,
         iconHTML: "",
         type: "submenu",
-        submenu: [{
-            id: "openBy",
-            icon: "iconOpenWindow",
-            label: window.siyuan.languages.openBy,
-            click() {
-                openWorkspace(item.path);
-            }
-        }, {
-            id: "showInFolder",
-            icon: "iconFolder",
-            label: window.siyuan.languages.showInFolder,
-            click() {
-                showFileInFolder(item.path);
-            }
-        }, {
-            id: "copyPath",
-            icon: "iconCopy",
-            label: window.siyuan.languages.copyPath,
-            click() {
-                writeText(item.path);
-                showMessage(window.siyuan.languages.copied);
-            }
-        }, {
-            id: "removeWorkspaceTip",
-            icon: "iconTrashcan",
-            label: window.siyuan.languages.removeWorkspaceTip,
-            click() {
-                fetchPost("/api/system/removeWorkspaceDir", {path: item.path});
-            }
-        }],
+        submenu,
         click() {
             openWorkspace(item.path);
         },

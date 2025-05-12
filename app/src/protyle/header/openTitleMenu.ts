@@ -42,7 +42,7 @@ export const openTitleMenu = (protyle: IProtyle, position: IPosition) => {
             label: window.siyuan.languages.copy,
             icon: "iconCopy",
             type: "submenu",
-            submenu: copySubMenu(protyle.block.rootID)
+            submenu: copySubMenu([protyle.block.rootID])
         }).element);
         if (!protyle.disabled) {
             window.siyuan.menus.menu.append(movePathToMenu([protyle.path]));
@@ -118,14 +118,16 @@ export const openTitleMenu = (protyle: IProtyle, position: IPosition) => {
             }
         }).element);
         if (!window.siyuan.config.readonly) {
-            window.siyuan.menus.menu.append(new MenuItem({
-                id: "wechatReminder",
-                label: window.siyuan.languages.wechatReminder,
-                icon: "iconMp",
-                click() {
-                    openFileWechatNotify(protyle);
-                }
-            }).element);
+            if (window.siyuan.config.cloudRegion === 0) {
+                window.siyuan.menus.menu.append(new MenuItem({
+                    id: "wechatReminder",
+                    label: window.siyuan.languages.wechatReminder,
+                    icon: "iconMp",
+                    click() {
+                        openFileWechatNotify(protyle);
+                    }
+                }).element);
+            }
             const riffCardMenu: IMenu[] = [{
                 id: "spaceRepetition",
                 iconHTML: "",

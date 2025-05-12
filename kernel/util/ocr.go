@@ -242,13 +242,18 @@ func Tesseract(imgAbsPath string) (ret []map[string]interface{}) {
 		fields := strings.Split(line, "\t")
 		// 将字段名和字段值映射到一个 map 中
 		dataMap := make(map[string]interface{})
-		for i, header := range strings.Split(lines[0], "\t") {
-			dataMap[header] = fields[i]
+		headers := strings.Split(lines[0], "\t")
+		for i, header := range headers {
+			if i < len(fields) {
+				dataMap[header] = fields[i]
+			} else {
+				dataMap[header] = ""
+			}
 		}
 		ret = append(ret, dataMap)
 	}
 
-	tsv = gulu.Str.RemoveInvisible(tsv)
+	tsv = RemoveInvalid(tsv)
 	tsv = RemoveRedundantSpace(tsv)
 	msg := fmt.Sprintf("OCR [%s] [%s]", html.EscapeString(info.Name()), html.EscapeString(GetOcrJsonText(ret)))
 	PushStatusBar(msg)
@@ -266,7 +271,7 @@ func GetOcrJsonText(jsonData []map[string]interface{}) (ret string) {
 			}
 		}
 	}
-	ret = gulu.Str.RemoveInvisible(ret)
+	ret = RemoveInvalid(ret)
 	ret = RemoveRedundantSpace(ret)
 	return ret
 }

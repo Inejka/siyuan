@@ -31,15 +31,19 @@ import {hideAllElements} from "./protyle/ui/hideElements";
 import {loadPlugins, reloadPlugin} from "./plugin/loader";
 import "./assets/scss/base.scss";
 import {reloadEmoji} from "./emoji";
+import {processIOSPurchaseResponse} from "./util/iOSPurchase";
+/// #if BROWSER
+import {setLocalShorthandCount} from "./util/noRelyPCFunction";
+/// #endif
+import {getDockByType} from "./layout/tabUtil";
+import {Tag} from "./layout/dock/Tag";
 
 export class App {
     public plugins: import("./plugin").Plugin[] = [];
     public appId: string;
 
     constructor() {
-        /// #if BROWSER
         registerServiceWorker(`${Constants.SERVICE_WORKER_PATH}?v=${Constants.SIYUAN_VERSION}`);
-        /// #endif
         addBaseURL();
 
         this.appId = Constants.SIYUAN_APPID;
@@ -66,6 +70,16 @@ export class App {
                             case "setDefRefCount":
                                 setDefRefCount(data.data);
                                 break;
+                            case "reloadTag":
+                                if (getDockByType("tag")?.data.tag instanceof Tag) {
+                                    (getDockByType("tag").data.tag as Tag).update();
+                                }
+                                break;
+                            /// #if BROWSER
+                            case "setLocalShorthandCount":
+                                setLocalShorthandCount();
+                                break;
+                            /// #endif
                             case "setRefDynamicText":
                                 setRefDynamicText(data.data);
                                 break;
@@ -210,4 +224,5 @@ window.openFileByURL = (openURL) => {
 window.showKeyboardToolbar = () => {
     // 防止 Pad 端报错
 };
+window.processIOSPurchaseResponse = processIOSPurchaseResponse;
 /// #endif

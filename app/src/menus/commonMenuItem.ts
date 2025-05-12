@@ -6,7 +6,7 @@ import {getSearch, isMobile, isValidAttrName} from "../util/functions";
 import {isLocalPath, movePathTo, moveToPath, pathPosix} from "../util/pathName";
 import {MenuItem} from "./Menu";
 import {saveExport} from "../protyle/export";
-import {isInAndroid, openByMobile, writeText} from "../protyle/util/compatibility";
+import {isInAndroid, isInHarmony, openByMobile} from "../protyle/util/compatibility";
 import {fetchPost, fetchSyncPost} from "../util/fetch";
 import {hideMessage, showMessage} from "../dialog/message";
 import {Dialog} from "../dialog";
@@ -22,6 +22,8 @@ import {App} from "../index";
 import {renderAVAttribute} from "../protyle/render/av/blockAttr";
 import {openAssetNewWindow} from "../window/openNewWindow";
 import {escapeHtml} from "../util/escape";
+import {copyTextByType} from "../protyle/toolbar/util";
+import {hideElements} from "../protyle/ui/hideElements";
 
 const bindAttrInput = (inputElement: HTMLInputElement, id: string) => {
     inputElement.addEventListener("change", () => {
@@ -183,6 +185,7 @@ export const openFileAttr = (attrs: IObject, focusName = "bookmark", protyle?: I
     });
     const dialog = new Dialog({
         width: isMobile() ? "92vw" : "50vw",
+        containerClassName: "b3-dialog__container--theme",
         height: "80vh",
         content: `<div class="fn__flex-column">
     <div class="layout-tab-bar fn__flex" style="flex-shrink:0;border-radius: var(--b3-border-radius-b) var(--b3-border-radius-b) 0 0">
@@ -233,7 +236,7 @@ export const openFileAttr = (attrs: IObject, focusName = "bookmark", protyle?: I
         <div data-type="custom" class="fn__none custom-attr">
            ${customHTML}
            <div class="b3-label">
-               <button data-action="addCustom" class="b3-button b3-button--outline">
+               <button data-action="addCustom" class="b3-button b3-button--cancel">
                    <svg><use xlink:href="#iconAdd"></use></svg>${window.siyuan.languages.addAttr}
                </button>
            </div>
@@ -242,6 +245,9 @@ export const openFileAttr = (attrs: IObject, focusName = "bookmark", protyle?: I
 </div>`,
         destroyCallback() {
             focusByRange(range);
+            if (protyle) {
+                hideElements(["select"], protyle);
+            }
         }
     });
     dialog.element.setAttribute("data-key", Constants.DIALOG_ATTR);
@@ -251,7 +257,7 @@ export const openFileAttr = (attrs: IObject, focusName = "bookmark", protyle?: I
     dialog.element.addEventListener("click", (event) => {
         let target = event.target as HTMLElement;
         if (typeof event.detail === "string") {
-            target = dialog.element.querySelector('.item--full[data-type="NodeAttributeView"]');
+            target = dialog.element.querySelector(`.item--full[data-type="${event.detail}"]`);
         }
         while (!target.isSameNode(dialog.element)) {
             const type = target.dataset.action;
@@ -260,7 +266,7 @@ export const openFileAttr = (attrs: IObject, focusName = "bookmark", protyle?: I
                 target.classList.add("item--focus");
                 dialog.element.querySelectorAll(".custom-attr").forEach((item: HTMLElement) => {
                     if (item.dataset.type === target.dataset.type) {
-                        if (item.dataset.type === "NodeAttributeView" && item.innerHTML === "") {
+                        if (item.dataset.type === "NodeAttributeView" && item.innerHTML === "" && protyle) {
                             renderAVAttribute(item, attrs.id, protyle);
                         }
                         item.classList.remove("fn__none");
@@ -282,6 +288,7 @@ export const openFileAttr = (attrs: IObject, focusName = "bookmark", protyle?: I
                     window.siyuan.menus.menu.remove();
                     if (response.data.length === 0) {
                         window.siyuan.menus.menu.append(new MenuItem({
+                            id: "emptyContent",
                             iconHTML: "",
                             label: window.siyuan.languages.emptyContent,
                             type: "readonly",
@@ -351,13 +358,15 @@ export const openFileAttr = (attrs: IObject, focusName = "bookmark", protyle?: I
         }
     });
     dialog.element.querySelectorAll(".b3-text-field").forEach((item: HTMLInputElement) => {
-        if (focusName !== "av" && focusName === item.getAttribute("data-name")) {
+        if (focusName !== "av" && focusName !== "custom" && focusName === item.getAttribute("data-name")) {
             item.focus();
         }
         bindAttrInput(item, attrs.id);
     });
     if (focusName === "av") {
-        dialog.element.dispatchEvent(new CustomEvent("click", {detail: "av"}));
+        dialog.element.dispatchEvent(new CustomEvent("click", {detail: "NodeAttributeView"}));
+    } else if (focusName === "custom") {
+        dialog.element.dispatchEvent(new CustomEvent("click", {detail: "custom"}));
     }
 };
 
@@ -371,16 +380,14 @@ export const openAttr = (nodeElement: Element, focusName = "bookmark", protyle?:
     });
 };
 
-export const copySubMenu = (id: string, accelerator = true, focusElement?: Element) => {
+export const copySubMenu = (ids: string[], accelerator = true, focusElement?: Element) => {
     return [{
         id: "copyBlockRef",
         iconHTML: "",
         accelerator: accelerator ? window.siyuan.config.keymap.editor.general.copyBlockRef.custom : undefined,
         label: window.siyuan.languages.copyBlockRef,
         click: () => {
-            fetchPost("/api/block/getRefText", {id}, (response) => {
-                writeText(`((${id} '${response.data}'))`);
-            });
+            copyTextByType(ids, "ref");
             if (focusElement) {
                 focusBlock(focusElement);
             }
@@ -391,7 +398,7 @@ export const copySubMenu = (id: string, accelerator = true, focusElement?: Eleme
         label: window.siyuan.languages.copyBlockEmbed,
         accelerator: accelerator ? window.siyuan.config.keymap.editor.general.copyBlockEmbed.custom : undefined,
         click: () => {
-            writeText(`{{select * from blocks where id='${id}'}}`);
+            copyTextByType(ids, "blockEmbed");
             if (focusElement) {
                 focusBlock(focusElement);
             }
@@ -402,7 +409,7 @@ export const copySubMenu = (id: string, accelerator = true, focusElement?: Eleme
         label: window.siyuan.languages.copyProtocol,
         accelerator: accelerator ? window.siyuan.config.keymap.editor.general.copyProtocol.custom : undefined,
         click: () => {
-            writeText(`siyuan://blocks/${id}`);
+            copyTextByType(ids, "protocol");
             if (focusElement) {
                 focusBlock(focusElement);
             }
@@ -413,9 +420,7 @@ export const copySubMenu = (id: string, accelerator = true, focusElement?: Eleme
         label: window.siyuan.languages.copyProtocolInMd,
         accelerator: accelerator ? window.siyuan.config.keymap.editor.general.copyProtocolInMd.custom : undefined,
         click: () => {
-            fetchPost("/api/block/getRefText", {id}, (response) => {
-                writeText(`[${response.data}](siyuan://blocks/${id})`);
-            });
+            copyTextByType(ids, "protocolMd");
             if (focusElement) {
                 focusBlock(focusElement);
             }
@@ -426,11 +431,10 @@ export const copySubMenu = (id: string, accelerator = true, focusElement?: Eleme
         label: window.siyuan.languages.copyHPath,
         accelerator: accelerator ? window.siyuan.config.keymap.editor.general.copyHPath.custom : undefined,
         click: () => {
-            fetchPost("/api/filetree/getHPathByID", {
-                id
-            }, (response) => {
-                writeText(response.data);
-            });
+            copyTextByType(ids, "hPath");
+            if (focusElement) {
+                focusBlock(focusElement);
+            }
         }
     }, {
         id: "copyID",
@@ -438,7 +442,7 @@ export const copySubMenu = (id: string, accelerator = true, focusElement?: Eleme
         label: window.siyuan.languages.copyID,
         accelerator: accelerator ? window.siyuan.config.keymap.editor.general.copyID.custom : undefined,
         click: () => {
-            writeText(id);
+            copyTextByType(ids, "id");
             if (focusElement) {
                 focusBlock(focusElement);
             }
@@ -714,6 +718,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
     const submenu = [];
     /// #if MOBILE
     submenu.push({
+        id: isInAndroid() ? "useDefault" : "useBrowserView",
         label: isInAndroid() ? window.siyuan.languages.useDefault : window.siyuan.languages.useBrowserView,
         accelerator: showAccelerator ? window.siyuan.languages.click : "",
         click: () => {
@@ -727,6 +732,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
                 (src.endsWith(".pdf") && !src.startsWith("file://")))
         ) {
             submenu.push({
+                id: "insertRight",
                 icon: "iconLayoutRight",
                 label: window.siyuan.languages.insertRight,
                 accelerator: showAccelerator ? window.siyuan.languages.click : "",
@@ -735,6 +741,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
                 }
             });
             submenu.push({
+                id: "openBy",
                 label: window.siyuan.languages.openBy,
                 icon: "iconOpen",
                 accelerator: showAccelerator ? "⌥" + window.siyuan.languages.click : "",
@@ -744,6 +751,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
             });
             /// #if !BROWSER
             submenu.push({
+                id: "openByNewWindow",
                 label: window.siyuan.languages.openByNewWindow,
                 icon: "iconOpenWindow",
                 click() {
@@ -751,6 +759,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
                 }
             });
             submenu.push({
+                id: "showInFolder",
                 icon: "iconFolder",
                 label: window.siyuan.languages.showInFolder,
                 accelerator: showAccelerator ? "⌘" + window.siyuan.languages.click : "",
@@ -759,6 +768,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
                 }
             });
             submenu.push({
+                id: "useDefault",
                 label: window.siyuan.languages.useDefault,
                 accelerator: showAccelerator ? "⇧" + window.siyuan.languages.click : "",
                 click() {
@@ -769,6 +779,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
         } else {
             /// #if !BROWSER
             submenu.push({
+                id: "useDefault",
                 label: window.siyuan.languages.useDefault,
                 accelerator: showAccelerator ? window.siyuan.languages.click : "",
                 click() {
@@ -776,6 +787,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
                 }
             });
             submenu.push({
+                id: "showInFolder",
                 icon: "iconFolder",
                 label: window.siyuan.languages.showInFolder,
                 accelerator: showAccelerator ? "⌘" + window.siyuan.languages.click : "",
@@ -785,7 +797,8 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
             });
             /// #else
             submenu.push({
-                label: isInAndroid() ? window.siyuan.languages.useDefault : window.siyuan.languages.useBrowserView,
+                id: isInAndroid() || isInHarmony() ? "useDefault" : "useBrowserView",
+                label: isInAndroid() || isInHarmony() ? window.siyuan.languages.useDefault : window.siyuan.languages.useBrowserView,
                 accelerator: showAccelerator ? window.siyuan.languages.click : "",
                 click: () => {
                     openByMobile(src);
@@ -801,6 +814,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
         }
         /// #if !BROWSER
         submenu.push({
+            id: "useDefault",
             label: window.siyuan.languages.useDefault,
             accelerator: showAccelerator ? window.siyuan.languages.click : "",
             click: () => {
@@ -811,7 +825,8 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
         });
         /// #else
         submenu.push({
-            label: isInAndroid() ? window.siyuan.languages.useDefault : window.siyuan.languages.useBrowserView,
+            id: isInAndroid() || isInHarmony() ? "useDefault" : "useBrowserView",
+            label: isInAndroid() || isInHarmony() ? window.siyuan.languages.useDefault : window.siyuan.languages.useBrowserView,
             accelerator: showAccelerator ? window.siyuan.languages.click : "",
             click: () => {
                 openByMobile(src);
@@ -824,6 +839,7 @@ export const openMenu = (app: App, src: string, onlyMenu: boolean, showAccelerat
         return submenu;
     }
     window.siyuan.menus.menu.append(new MenuItem({
+        id: "openBy",
         label: window.siyuan.languages.openBy,
         icon: "iconOpen",
         submenu

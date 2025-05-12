@@ -1,5 +1,5 @@
 import {openModel} from "../menu/model";
-import {getEventName, isIPhone} from "../../protyle/util/compatibility";
+import {isInIOS} from "../../protyle/util/compatibility";
 import {fetchPost} from "../../util/fetch";
 import {closePanel} from "../util/closePanel";
 import {processSync} from "../../dialog/processSystem";
@@ -10,13 +10,32 @@ import {getCloudURL, getIndexURL} from "../../config/util/about";
 import {Dialog} from "../../dialog";
 import {hideElements} from "../../protyle/ui/hideElements";
 import {Constants} from "../../constants";
+import {iOSPurchase} from "../../util/iOSPurchase";
 
 export const showAccountInfo = () => {
-    const hideIphone = isIPhone() ? " fn__none" : "";
-    const payHTML = `<a class="b3-button b3-button--big${hideIphone}" href="${getIndexURL("pricing.html")}" target="_blank">
+    const isIOS = isInIOS();
+    let payHTML;
+    if (isIOS) {
+        // 已付费
+        if (window.siyuan.user?.userSiYuanOneTimePayStatus === 1) {
+            payHTML = `<button class="b3-button b3-button--big" data-action="iOSPay" data-type="subscribe">
+    <svg><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages.account4}
+</button>`;
+        } else {
+            payHTML = `<button class="b3-button b3-button--big" data-action="iOSPay" data-type="subscribe">
+    <svg><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages.account10}
+</button>
+<div class="fn__hr--b"></div>
+<button class="b3-button b3-button--success" data-action="iOSPay" data-type="function">
+    <svg><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages.onepay}
+</button>`;
+        }
+    } else {
+        payHTML = `<a class="b3-button b3-button--big" href="${getIndexURL("pricing.html")}" target="_blank">
     <svg><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages[window.siyuan.user?.userSiYuanOneTimePayStatus === 1 ? "account4" : "account1"]}
-</a>
-<div class="fn__hr--b${hideIphone}"></div>
+</a>`;
+    }
+    payHTML += `<div class="fn__hr--b"></div>
 <span class="b3-chip b3-chip--primary b3-chip--hover${(window.siyuan.user && window.siyuan.user.userSiYuanSubscriptionStatus === 2) ? " fn__none" : ""}" id="trialSub">
     <svg class="ft__secondary"><use xlink:href="#iconVIP"></use></svg>
     ${window.siyuan.languages.freeSub}
@@ -45,7 +64,7 @@ export const showAccountInfo = () => {
     ${window.siyuan.languages.account6} 
     ${Math.max(0, Math.floor((window.siyuan.user.userSiYuanProExpireTime - new Date().getTime()) / 1000 / 60 / 60 / 24))} 
     ${window.siyuan.languages.day} 
-    <a class="${hideIphone}" href="${getCloudURL("subscribe/siyuan")}" target="_blank">${window.siyuan.languages.clickMeToRenew}</a>
+    ${isIOS ? `<a href="javascript:void(0)" data-action="iOSPay" data-type="subscribe">${window.siyuan.languages.clickMeToRenew}</a>` : `<a href="${getCloudURL("subscribe/siyuan")}" target="_blank">${window.siyuan.languages.clickMeToRenew}</a>`}
 </div>`;
         if (window.siyuan.user.userSiYuanOneTimePayStatus === 1) {
             subscriptionHTML = `<div class="b3-chip"><svg><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages.onepay}</div>
@@ -54,9 +73,17 @@ export const showAccountInfo = () => {
         if (window.siyuan.user.userSiYuanSubscriptionPlan === 2) {
             // 订阅试用
             subscriptionHTML += `<div class="b3-chip b3-chip--primary"><svg><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages.account3}</div>
-${renewHTML}`;
+${renewHTML}<div class="fn__hr--b"></div>`;
         } else {
-            subscriptionHTML += `<div class="b3-chip b3-chip--primary"><svg class="ft__secondary"><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages.account10}</div>${renewHTML}`;
+            subscriptionHTML += `<div class="b3-chip b3-chip--primary"><svg class="ft__secondary"><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages.account10}</div>
+${renewHTML}<div class="fn__hr--b"></div>`;
+        }
+        if (window.siyuan.user.userSiYuanOneTimePayStatus === 0) {
+            subscriptionHTML += !isIOS ? `<button class="b3-button b3-button--success" data-action="iOSPay" data-type="function">
+    <svg><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages.onepay}
+</button>` : `<a class="b3-button b3-button--success" href="${getIndexURL("pricing.html")}" target="_blank">
+    <svg><use xlink:href="#iconVIP"></use></svg>${window.siyuan.languages.onepay}
+</a>`;
         }
     } else {
         if (window.siyuan.user.userSiYuanOneTimePayStatus === 1) {
@@ -87,8 +114,8 @@ ${renewHTML}`;
 </div>
 <div class="config-account__info">
     <div class="fn__flex">
-        <a class="b3-button b3-button--text${hideIphone}" href="${getCloudURL("settings")}" target="_blank">${window.siyuan.languages.manage}</a>
-        <span class="fn__space${hideIphone}"></span>
+        <a class="b3-button b3-button--text${isIOS ? " fn__none" : ""}" href="${getCloudURL("settings")}" target="_blank">${window.siyuan.languages.manage}</a>
+        <span class="fn__space${isIOS ? " fn__none" : ""}"></span>
         <button class="b3-button b3-button--cancel" id="logout">
             ${window.siyuan.languages.logout}
         </button>
@@ -103,52 +130,73 @@ ${renewHTML}`;
     </div>
 </div></div>`,
         bindEvent(modelMainElement: HTMLElement) {
-            modelMainElement.querySelector("#logout").addEventListener(getEventName(), () => {
-                fetchPost("/api/setting/logoutCloudUser", {}, () => {
-                    window.siyuan.user = null;
-                    closePanel();
-                    document.getElementById("menuAccount").innerHTML = `<svg class="b3-menu__icon"><use xlink:href="#iconAccount"></use></svg><span class="b3-menu__label">${window.siyuan.languages.login}</span>`;
-                    processSync();
-                });
-            });
-            modelMainElement.querySelector("#deactivateUser").addEventListener("click", () => {
-                const dialog = new Dialog({
-                    title: "⚠️ " + window.siyuan.languages.deactivateUser,
-                    width: "92vw",
-                    content: getLoginHTML(true),
-                });
-                bindLoginEvent(dialog.element.querySelector(".b3-dialog__body"), true);
-                dialog.element.setAttribute("data-key", Constants.DIALOG_DEACTIVATEUSER);
-            });
-            const trialSubElement = modelMainElement.querySelector("#trialSub");
-            if (trialSubElement) {
-                trialSubElement.addEventListener("click", () => {
-                    fetchPost("/api/account/startFreeTrial", {}, () => {
-                        modelMainElement.querySelector("#refresh").dispatchEvent(new Event("click"));
-                    });
-                });
-            }
-            const refreshElement = modelMainElement.querySelector("#refresh");
-            refreshElement.addEventListener("click", () => {
-                const svgElement = refreshElement.firstElementChild;
-                if (svgElement.classList.contains("fn__rotate")) {
-                    return;
+            modelMainElement.addEventListener("click", (event) => {
+                let target = event.target as HTMLElement;
+                if (typeof event.detail !== "number") {
+                    target = event.detail;
                 }
-                svgElement.classList.add("fn__rotate");
-                fetchPost("/api/setting/getCloudUser", {
-                    token: window.siyuan.user.userToken,
-                }, response => {
-                    window.siyuan.user = response.data;
-                    showMessage(window.siyuan.languages.refreshUser, 3000);
-                    showAccountInfo();
-                    const menuAccountElement = document.getElementById("menuAccount");
-                    if (window.siyuan.user) {
-                        menuAccountElement.innerHTML = `<img class="b3-menu__icon" src="${window.siyuan.user.userAvatarURL}"/><span class="b3-menu__label">${window.siyuan.user.userName}</span>`;
-                    } else {
-                        menuAccountElement.innerHTML = `<svg class="b3-menu__icon"><use xlink:href="#iconAccount"></use></svg><span class="b3-menu__label">${window.siyuan.languages.login}</span>`;
+                while (target && !target.isSameNode(modelMainElement)) {
+                    if (target.getAttribute("data-action") === "iOSPay") {
+                        iOSPurchase(target.getAttribute("data-type"));
+                        event.preventDefault();
+                        event.stopPropagation();
+                        break;
+                    } else if (target.id === "logout") {
+                        fetchPost("/api/setting/logoutCloudUser", {}, () => {
+                            window.siyuan.user = null;
+                            closePanel();
+                            document.getElementById("menuAccount").innerHTML = `<svg class="b3-menu__icon"><use xlink:href="#iconAccount"></use></svg><span class="b3-menu__label">${window.siyuan.languages.login}</span>`;
+                            processSync();
+                        });
+                        event.preventDefault();
+                        event.stopPropagation();
+                        break;
+                    } else if (target.id === "deactivateUser") {
+                        const dialog = new Dialog({
+                            title: "⚠️ " + window.siyuan.languages.deactivateUser,
+                            width: "92vw",
+                            content: getLoginHTML(true),
+                        });
+                        bindLoginEvent(dialog.element.querySelector(".b3-dialog__body"), true);
+                        dialog.element.setAttribute("data-key", Constants.DIALOG_DEACTIVATEUSER);
+                        event.preventDefault();
+                        event.stopPropagation();
+                        break;
+                    } else if (target.id === "trialSub") {
+                        fetchPost("/api/account/startFreeTrial", {}, () => {
+                            modelMainElement.dispatchEvent(new CustomEvent("click", {
+                                detail: modelMainElement.querySelector("#refresh")
+                            }));
+                        });
+                        event.preventDefault();
+                        event.stopPropagation();
+                        break;
+                    } else if (target.id === "refresh") {
+                        const svgElement = target.firstElementChild;
+                        if (svgElement.classList.contains("fn__rotate")) {
+                            return;
+                        }
+                        svgElement.classList.add("fn__rotate");
+                        fetchPost("/api/setting/getCloudUser", {
+                            token: window.siyuan.user.userToken,
+                        }, response => {
+                            window.siyuan.user = response.data;
+                            showMessage(window.siyuan.languages.refreshUser, 3000);
+                            showAccountInfo();
+                            const menuAccountElement = document.getElementById("menuAccount");
+                            if (window.siyuan.user) {
+                                menuAccountElement.innerHTML = `<img class="b3-menu__icon" src="${window.siyuan.user.userAvatarURL}"/><span class="b3-menu__label">${window.siyuan.user.userName}</span>`;
+                            } else {
+                                menuAccountElement.innerHTML = `<svg class="b3-menu__icon"><use xlink:href="#iconAccount"></use></svg><span class="b3-menu__label">${window.siyuan.languages.login}</span>`;
+                            }
+                            processSync();
+                        });
+                        event.preventDefault();
+                        event.stopPropagation();
+                        break;
                     }
-                    processSync();
-                });
+                    target = target.parentElement;
+                }
             });
         }
     });
@@ -159,7 +207,7 @@ const getLoginHTML = (deactivate = false) => {
     if (deactivate) {
         confirmHTML = `<div class="b3-form__img fn__none">
     <div class="fn__hr--b"></div>
-    <img id="captchaImg" class="fn__pointer" style="top: 17px">
+    <img id="captchaImg" class="fn__pointer" style="top: 17px;height: 26px;">
     <input id="captcha" class="b3-text-field fn__block" placeholder="${window.siyuan.languages.captcha}">
 </div>
 <div class="fn__hr--b"></div>
@@ -174,7 +222,7 @@ const getLoginHTML = (deactivate = false) => {
 </div>
 <div class="b3-form__img fn__none">
     <div class="fn__hr--b"></div>
-    <img id="captchaImg" class="fn__pointer" style="top: 17px">
+    <img id="captchaImg" class="fn__pointer" style="top: 17px;height: 26px;">
     <input id="captcha" class="b3-text-field fn__block" placeholder="${window.siyuan.languages.captcha}">
 </div>
 <div class="fn__hr--b"></div>

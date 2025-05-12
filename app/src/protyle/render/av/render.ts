@@ -1,7 +1,7 @@
 import {fetchPost} from "../../../util/fetch";
 import {getColIconByType} from "./col";
 import {Constants} from "../../../constants";
-import {addDragFill, renderCell} from "./cell";
+import {addDragFill, cellScrollIntoView, renderCell} from "./cell";
 import {unicode2Emoji} from "../../../emoji";
 import {focusBlock} from "../../util/selection";
 import {hasClosestBlock, hasClosestByAttribute, hasClosestByClassName} from "../../util/hasClosest";
@@ -11,8 +11,11 @@ import {renderAVAttribute} from "./blockAttr";
 import {showMessage} from "../../../dialog/message";
 import {addClearButton} from "../../../util/addClearButton";
 import {escapeAriaLabel, escapeAttr, escapeHtml} from "../../../util/escape";
+import {electronUndo} from "../../undo";
+import {isInAndroid, isInHarmony, isInIOS} from "../../util/compatibility";
+import {isMobile} from "../../../util/functions";
 
-export const avRender = (element: Element, protyle: IProtyle, cb?: () => void, viewID?: string) => {
+export const avRender = (element: Element, protyle: IProtyle, cb?: () => void, viewID?: string, renderAll = true) => {
     let avElements: Element[] = [];
     if (element.getAttribute("data-type") === "NodeAttributeView") {
         // 编辑器内代码块编辑渲染
@@ -27,6 +30,9 @@ export const avRender = (element: Element, protyle: IProtyle, cb?: () => void, v
         avElements.forEach((e: HTMLElement) => {
             if (e.getAttribute("data-render") === "true") {
                 return;
+            }
+            if (isMobile() || isInIOS() || isInAndroid() || isInHarmony()) {
+                e.classList.add("av--touch");
             }
             const alignSelf = e.style.alignSelf;
             if (e.firstElementChild.innerHTML === "") {
@@ -131,10 +137,9 @@ export const avRender = (element: Element, protyle: IProtyle, cb?: () => void, v
                     if (column.hidden) {
                         return;
                     }
-                    tableHTML += `<div class="av__cell av__cell--header ariaLabel" data-col-id="${column.id}"  draggable="true" 
+                    tableHTML += `<div class="av__cell av__cell--header" data-col-id="${column.id}"  draggable="true" 
 data-icon="${column.icon}" data-dtype="${column.type}" data-wrap="${column.wrap}" data-pin="${column.pin}" 
-data-desc="${escapeAttr(column.desc)}" data-position="top"
-aria-label="${escapeAriaLabel(column.name)}<div class='ft__on-surface'>${escapeAriaLabel(column.desc || "")}</div>"
+data-desc="${escapeAttr(column.desc)}" data-position="north" 
 style="width: ${column.width || "200px"};">
     ${column.icon ? unicode2Emoji(column.icon, "av__cellheadericon", true) : `<svg class="av__cellheadericon"><use xlink:href="#${getColIconByType(column.type)}"></use></svg>`}
     <span class="av__celltext fn__flex-1">${escapeHtml(column.name)}</span>
@@ -150,7 +155,7 @@ style="width: ${column.width || "200px"};">
                         calcHTML += `<div data-col-id="${column.id}" data-dtype="${column.type}" class="av__calc" style="width: ${column.width || "200px"}">&nbsp;</div>`;
                     } else {
                         calcHTML += `<div class="av__calc${column.calc && column.calc.operator !== "" ? " av__calc--ashow" : ""}" data-col-id="${column.id}" data-dtype="${column.type}" data-operator="${column.calc?.operator || ""}" 
-style="width: ${column.width || "200px"}">${getCalcValue(column) || '<svg><use xlink:href="#iconDown"></use></svg>' + window.siyuan.languages.calc}</div>`;
+style="width: ${column.width || "200px"}">${getCalcValue(column) || `<svg><use xlink:href="#iconDown"></use></svg><small>${window.siyuan.languages.calc}</small>`}</div>`;
                     }
                     if (column.calc && column.calc.operator !== "") {
                         hasCalc = true;
@@ -163,7 +168,7 @@ style="width: ${column.width || "200px"}">${getCalcValue(column) || '<svg><use x
                 tableHTML += `<div class="block__icons" style="min-height: auto">
     <div class="block__icon block__icon--show" data-type="av-header-more"><svg><use xlink:href="#iconMore"></use></svg></div>
     <div class="fn__space"></div>
-    <div class="block__icon block__icon--show ariaLabel" aria-label="${window.siyuan.languages.newCol}" data-type="av-header-add" data-position="4bottom"><svg><use xlink:href="#iconAdd"></use></svg></div>
+    <div class="block__icon block__icon--show ariaLabel" aria-label="${window.siyuan.languages.newCol}" data-type="av-header-add" data-position="4south"><svg><use xlink:href="#iconAdd"></use></svg></div>
 </div>
 </div>`;
                 // body
@@ -202,7 +207,7 @@ ${cell.color ? `color:${cell.color};` : ""}">${renderCell(cell.value, rowIndex)}
                 let tabHTML = "";
                 let viewData: IAVView;
                 response.data.views.forEach((item: IAVView) => {
-                    tabHTML += `<div data-position="top" data-id="${item.id}" data-page="${item.pageSize}" aria-label="${escapeAriaLabel(item.name)}<div class='ft__on-surface'>${escapeAriaLabel(item.desc || "")}</div>" class="ariaLabel item${item.id === response.data.viewID ? " item--focus" : ""}">
+                    tabHTML += `<div data-position="north" data-id="${item.id}" data-page="${item.pageSize}" data-desc="${escapeAriaLabel(item.desc || "")}" class="ariaLabel item${item.id === response.data.viewID ? " item--focus" : ""}">
     ${item.icon ? unicode2Emoji(item.icon, "item__graphic", true) : '<svg class="item__graphic"><use xlink:href="#iconTable"></use></svg>'}
     <span class="item__text">${escapeHtml(item.name)}</span>
 </div>`;
@@ -210,14 +215,33 @@ ${cell.color ? `color:${cell.color};` : ""}">${renderCell(cell.value, rowIndex)}
                         viewData = item;
                     }
                 });
-                e.firstElementChild.outerHTML = `<div class="av__container">
+                const avBodyHTML = `<div class="av__body">
+    ${tableHTML}
+    <div class="av__row--util${data.rowCount > data.rows.length ? " av__readonly--show" : ""}">
+        <div class="av__colsticky">
+            <button class="b3-button" data-type="av-add-bottom">
+                <svg><use xlink:href="#iconAdd"></use></svg>
+                <span>${window.siyuan.languages.newRow}</span>
+            </button>
+            <span class="fn__space"></span>
+            <button class="b3-button${data.rowCount > data.rows.length ? "" : " fn__none"}" data-type="av-load-more">
+                <svg><use xlink:href="#iconArrowDown"></use></svg>
+                <span>${window.siyuan.languages.loadMore}</span>
+                <svg data-type="set-page-size" data-size="${data.pageSize}"><use xlink:href="#iconMore"></use></svg>
+            </button>
+        </div>
+    </div>
+    <div class="av__row--footer${hasCalc ? " av__readonly--show" : ""}">${calcHTML}</div>
+</div>`;
+                if (renderAll) {
+                    e.firstElementChild.outerHTML = `<div class="av__container">
     <div class="av__header">
         <div class="fn__flex av__views${isSearching || query ? " av__views--show" : ""}">
             <div class="layout-tab-bar fn__flex">
                 ${tabHTML}
             </div>
             <div class="fn__space"></div>
-            <span data-type="av-add" class="block__icon ariaLabel" data-position="8bottom" aria-label="${window.siyuan.languages.newView}">
+            <span data-type="av-add" class="block__icon ariaLabel" data-position="8south" aria-label="${window.siyuan.languages.newView}">
                 <svg><use xlink:href="#iconAdd"></use></svg>
             </span>
             <div class="fn__flex-1"></div>
@@ -236,9 +260,9 @@ ${cell.color ? `color:${cell.color};` : ""}">${renderCell(cell.value, rowIndex)}
                 <svg><use xlink:href="#iconSort"></use></svg>
             </span>
             <div class="fn__space"></div>
-            <span data-type="av-search-icon" class="block__icon">
+            <button data-type="av-search-icon" class="block__icon">
                 <svg><use xlink:href="#iconSearch"></use></svg>
-            </span>
+            </button>
             <div style="position: relative" class="fn__flex">
                 <input style="${isSearching || query ? "width:128px" : "width:0;padding-left: 0;padding-right: 0;"}" data-type="av-search" class="b3-text-field b3-text-field--text" placeholder="${window.siyuan.languages.search}">
             </div>
@@ -247,40 +271,24 @@ ${cell.color ? `color:${cell.color};` : ""}">${renderCell(cell.value, rowIndex)}
                 <svg><use xlink:href="#iconMore"></use></svg>
             </span>
             <div class="fn__space"></div>
-            <span data-type="av-add-more" class="block__icon ariaLabel" data-position="8bottom" aria-label="${window.siyuan.languages.newRow}">
+            <span data-type="av-add-more" class="block__icon ariaLabel" data-position="8south" aria-label="${window.siyuan.languages.newRow}">
                 <svg><use xlink:href="#iconAdd"></use></svg>
             </span>
             <div class="fn__space"></div>
-            ${response.data.isMirror ? ` <span data-av-id="${response.data.id}" data-popover-url="/api/av/getMirrorDatabaseBlocks" class="popover__block block__icon block__icon--show ariaLabel" data-position="8bottom" aria-label="${window.siyuan.languages.mirrorTip}">
+            ${response.data.isMirror ? ` <span data-av-id="${response.data.id}" data-popover-url="/api/av/getMirrorDatabaseBlocks" class="popover__block block__icon block__icon--show ariaLabel" data-position="8south" aria-label="${window.siyuan.languages.mirrorTip}">
     <svg><use xlink:href="#iconSplitLR"></use></svg></span><div class="fn__space"></div>` : ""}
         </div>
         <div contenteditable="${protyle.disabled || hasClosestByAttribute(e, "data-type", "NodeBlockQueryEmbed") ? "false" : "true"}" spellcheck="${window.siyuan.config.editor.spellcheck.toString()}" class="av__title${viewData.hideAttrViewName ? " fn__none" : ""}" data-title="${response.data.name || ""}" data-tip="${window.siyuan.languages.title}">${response.data.name || ""}</div>
         <div class="av__counter fn__none"></div>
     </div>
     <div class="av__scroll">
-        <div class="av__body">
-            ${tableHTML}
-            <div class="av__row--util${data.rowCount > data.rows.length ? " av__readonly--show" : ""}">
-                <div class="av__colsticky">
-                    <button class="b3-button" data-type="av-add-bottom">
-                        <svg><use xlink:href="#iconAdd"></use></svg>
-                        ${window.siyuan.languages.newRow}
-                    </button>
-                    <span class="fn__space"></span>
-                    <button class="b3-button${data.rowCount > data.rows.length ? "" : " fn__none"}">
-                        <svg data-type="av-load-more"><use xlink:href="#iconArrowDown"></use></svg>
-                        <span data-type="av-load-more">
-                            ${window.siyuan.languages.loadMore}
-                        </span>
-                        <svg data-type="set-page-size" data-size="${data.pageSize}"><use xlink:href="#iconMore"></use></svg>
-                    </button>
-                </div>
-            </div>
-            <div class="av__row--footer${hasCalc ? " av__readonly--show" : ""}">${calcHTML}</div>
-        </div>
+        ${avBodyHTML}
     </div>
     <div class="av__cursor" contenteditable="true">${Constants.ZWSP}</div>
 </div>`;
+                } else {
+                    e.firstElementChild.querySelector(".av__scroll").innerHTML = avBodyHTML;
+                }
                 e.setAttribute("data-render", "true");
                 // 历史兼容
                 e.style.margin = "";
@@ -294,12 +302,18 @@ ${cell.color ? `color:${cell.color};` : ""}">${renderCell(cell.value, rowIndex)}
                 if (headerTransform) {
                     (e.querySelector(".av__row--header") as HTMLElement).style.transform = headerTransform;
                 } else {
-                    stickyRow(e, editRect, "top");
+                    // 需等待渲染完，否则 getBoundingClientRect 错误 https://github.com/siyuan-note/siyuan/issues/13787
+                    setTimeout(() => {
+                        stickyRow(e, editRect, "top");
+                    }, Constants.TIMEOUT_LOAD);
                 }
                 if (footerTransform) {
                     (e.querySelector(".av__row--footer") as HTMLElement).style.transform = footerTransform;
                 } else {
-                    stickyRow(e, editRect, "bottom");
+                    // 需等待渲染完，否则 getBoundingClientRect 错误 https://github.com/siyuan-note/siyuan/issues/13787
+                    setTimeout(() => {
+                        stickyRow(e, editRect, "bottom");
+                    }, Constants.TIMEOUT_LOAD);
                 }
                 if (selectCellId) {
                     const newCellElement = e.querySelector(`.av__row[data-id="${selectCellId.split(Constants.ZWSP)[0]}"] .av__cell[data-col-id="${selectCellId.split(Constants.ZWSP)[1]}"]`);
@@ -309,16 +323,20 @@ ${cell.color ? `color:${cell.color};` : ""}">${renderCell(cell.value, rowIndex)}
                     const avMaskElement = document.querySelector(".av__mask");
                     if (avMaskElement) {
                         (avMaskElement.querySelector("textarea, input") as HTMLTextAreaElement)?.focus();
-                    } else if (!document.querySelector(".av__panel") && !isSearching) {
-                        focusBlock(e);
+                    } else if (!document.querySelector(".av__panel") && !isSearching && getSelection().rangeCount > 0) {
+                        const range = getSelection().getRangeAt(0);
+                        const blockElement = hasClosestBlock(range.startContainer);
+                        if (blockElement && e.isSameNode(blockElement)) {
+                            focusBlock(e);
+                        }
                     }
+                    cellScrollIntoView(e, newCellElement);
                 }
                 selectRowIds.forEach((selectRowId, index) => {
                     const rowElement = e.querySelector(`.av__row[data-id="${selectRowId}"]`) as HTMLElement;
                     if (rowElement) {
                         rowElement.classList.add("av__row--select");
                         rowElement.querySelector(".av__firstcol use").setAttribute("xlink:href", "#iconCheck");
-
                     }
 
                     if (index === selectRowIds.length - 1 && rowElement) {
@@ -346,13 +364,26 @@ ${cell.color ? `color:${cell.color};` : ""}">${renderCell(cell.value, rowIndex)}
                 if (cb) {
                     cb();
                 }
+                if (!renderAll) {
+                    return;
+                }
                 const viewsElement = e.querySelector(".av__views") as HTMLElement;
                 searchInputElement = e.querySelector('[data-type="av-search"]') as HTMLInputElement;
                 searchInputElement.value = query || "";
                 if (isSearching) {
                     searchInputElement.focus();
                 }
+                searchInputElement.addEventListener("compositionstart", (event: KeyboardEvent) => {
+                    event.stopPropagation();
+                });
+                searchInputElement.addEventListener("keydown", (event: KeyboardEvent) => {
+                    if (event.isComposing) {
+                        return;
+                    }
+                    electronUndo(event);
+                });
                 searchInputElement.addEventListener("input", (event: KeyboardEvent) => {
+                    event.stopPropagation();
                     if (event.isComposing) {
                         return;
                     }
@@ -402,7 +433,7 @@ const updateSearch = (e: HTMLElement, protyle: IProtyle) => {
     clearTimeout(searchTimeout);
     searchTimeout = window.setTimeout(() => {
         e.removeAttribute("data-render");
-        avRender(e, protyle);
+        avRender(e, protyle, undefined, undefined, false);
     }, Constants.TIMEOUT_INPUT);
 };
 

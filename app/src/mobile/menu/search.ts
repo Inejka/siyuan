@@ -13,7 +13,7 @@ import {unicode2Emoji} from "../../emoji";
 import {newFileByName} from "../../util/newFile";
 import {showMessage} from "../../dialog/message";
 import {reloadProtyle} from "../../protyle/util/reload";
-import {activeBlur, hideKeyboardToolbar} from "../util/keyboardToolbar";
+import {activeBlur} from "../util/keyboardToolbar";
 import {App} from "../../index";
 import {
     assetFilterMenu,
@@ -26,6 +26,13 @@ import {
 import {addClearButton} from "../../util/addClearButton";
 import {checkFold} from "../../util/noRelyPCFunction";
 import {getDefaultType} from "../../search/getDefault";
+import {
+    saveAssetKeyList,
+    saveKeyList,
+    toggleAssetHistory,
+    toggleReplaceHistory,
+    toggleSearchHistory
+} from "../../search/toggleHistory";
 
 const replace = (element: Element, config: Config.IUILayoutTabSearchConfig, isAll: boolean) => {
     if (config.method === 1 || config.method === 2) {
@@ -39,6 +46,7 @@ const replace = (element: Element, config: Config.IUILayoutTabSearchConfig, isAl
     if (!loadElement.classList.contains("fn__none")) {
         return;
     }
+    saveKeyList("replaceKeys", replaceInputElement.value);
     let currentLiElement: HTMLElement = searchListElement.querySelector(".b3-list-item--focus");
     if (!currentLiElement) {
         return;
@@ -180,17 +188,21 @@ ${unicode2Emoji(getNotebookIcon(item.box) || window.siyuan.storage[Constants.LOC
 <svg class="b3-list-item__graphic"><use xlink:href="#${getIconByType(childItem.type)}"></use></svg>
 ${unicode2Emoji(childItem.ial.icon, "b3-list-item__graphic", true)}
 <span class="b3-list-item__text">${childItem.content}</span>
+${childItem.tag ? `<span class="b3-list-item__meta b3-list-item__meta--ellipsis">${childItem.tag.split("# #").map(tag => `${tag.replace("#", "")}`).join(" ").replace("#", "")}</span>` : ""}
 </div>`;
             });
             resultHTML += "</div>";
         } else {
             resultHTML += `<div class="b3-list-item b3-list-item--two${index === 0 ? " b3-list-item--focus" : ""}" data-type="search-item" data-node-id="${item.id}">
-<div class="b3-list-item__first">
-    <svg class="b3-list-item__graphic"><use xlink:href="#${getIconByType(item.type)}"></use></svg>
-    ${unicode2Emoji(item.ial.icon, "b3-list-item__graphic", true)}
-    <span class="b3-list-item__text">${item.content}</span>
-</div>
-<span class="b3-list-item__text b3-list-item__meta">${escapeGreat(title)}</span>
+    <div class="b3-list-item__first">
+        <svg class="b3-list-item__graphic"><use xlink:href="#${getIconByType(item.type)}"></use></svg>
+        ${unicode2Emoji(item.ial.icon, "b3-list-item__graphic", true)}
+        <span class="b3-list-item__text">${item.content}</span>
+    </div>
+    <div class="fn__flex">
+        ${item.tag ? `<span class="b3-list-item__meta b3-list-item__meta--ellipsis">${item.tag.split("# #").map(tag => `${tag.replace("#", "")}`).join(" ").replace("#", "")}</span><span class="fn__space"></span>` : ""}
+        <span class="b3-list-item__text b3-list-item__meta">${escapeGreat(title)}</span>
+    </div>
 </div>`;
         }
     });
@@ -287,6 +299,7 @@ const initSearchEvent = (app: App, element: Element, config: Config.IUILayoutTab
             window.siyuan.storage[Constants.LOCAL_SEARCHDATA] = Object.assign({}, config);
             setStorageVal(Constants.LOCAL_SEARCHDATA, window.siyuan.storage[Constants.LOCAL_SEARCHDATA]);
         }
+        saveKeyList("keys", searchInputElement.value);
     });
     addClearButton({
         inputElement: searchInputElement,
@@ -313,7 +326,17 @@ const initSearchEvent = (app: App, element: Element, config: Config.IUILayoutTab
         let target = event.target as HTMLElement;
         while (target && !target.isSameNode(element)) {
             const type = target.getAttribute("data-type");
-            if (type === "previous") {
+            if (type === "replaceHistory") {
+                toggleReplaceHistory(target.nextElementSibling as HTMLInputElement);
+                event.stopPropagation();
+                event.preventDefault();
+                break;
+            } else if (type === "assetHistory") {
+                toggleAssetHistory(assetsElement);
+                event.stopPropagation();
+                event.preventDefault();
+                break;
+            } else if (type === "previous") {
                 if (!target.getAttribute("disabled")) {
                     config.page--;
                     updateSearchResult(config, element);
@@ -649,7 +672,6 @@ export const popSearch = (app: App, searchConfig?: any) => {
     }
 
     activeBlur();
-    hideKeyboardToolbar();
     let includeChild = true;
     let enableIncludeChild = false;
     config.idPath.forEach(item => {
@@ -663,13 +685,19 @@ export const popSearch = (app: App, searchConfig?: any) => {
 
     openModel({
         title: `<div class="fn__flex">
+    <span data-menu="true" class="toolbar__icon toolbar__icon--history" data-type="history">
+        <svg class="svg--mid"><use xlink:href="#iconSearch"></use></svg>
+        <svg class="svg--smaller"><use xlink:href="#iconDown"></use></svg>
+    </span>
     <input id="toolbarSearch" placeholder="${window.siyuan.languages.showRecentUpdatedBlocks}" class="toolbar__title fn__block">
     <svg id="toolbarSearchNew" class="toolbar__icon"><use xlink:href="#iconFile"></use></svg>
 </div>`,
-        icon: "iconSearch",
         html: `<div class="fn__flex-column" style="height: 100%">
     <div class="toolbar toolbar--border${config.hasReplace ? "" : " fn__none"}">
-        <svg class="toolbar__icon"><use xlink:href="#iconReplace"></use></svg>
+        <span data-menu="true" class="toolbar__icon toolbar__icon--history" data-type="replaceHistory">
+            <svg class="svg--mid"><use xlink:href="#iconReplace"></use></svg>
+            <svg class="svg--smaller"><use xlink:href="#iconDown"></use></svg>
+        </span>
         <input id="toolbarReplace" class="toolbar__title">
         <svg class="fn__rotate fn__none toolbar__icon"><use xlink:href="#iconRefresh"></use></svg>
         <div class="fn__space"></div>
@@ -707,7 +735,10 @@ export const popSearch = (app: App, searchConfig?: any) => {
      </div>
      <div class="fn__none fn__flex-column" style="position: fixed;top: 0;width: 100%;background: var(--b3-theme-surface);height: 100%;" id="searchAssetsPanel">
         <div class="toolbar toolbar--border">
-            <svg class="toolbar__icon"><use xlink:href="#iconSearch"></use></svg>
+           <span data-menu="true" class="toolbar__icon toolbar__icon--history" data-type="assetHistory">
+                <svg class="svg--mid"><use xlink:href="#iconSearch"></use></svg>
+                <svg class="svg--smaller"><use xlink:href="#iconDown"></use></svg>
+            </span>
             <input id="searchAssetInput" placeholder="${window.siyuan.languages.keyword}" class="toolbar__title fn__block">
         </div>
         <div class="toolbar">
@@ -750,6 +781,10 @@ export const popSearch = (app: App, searchConfig?: any) => {
             document.querySelector("#toolbarSearchNew").addEventListener("click", () => {
                 newFileByName(app, (document.querySelector("#toolbarSearch") as HTMLInputElement).value);
             });
+            const historyElement = document.querySelector('.toolbar [data-type="history"]');
+            historyElement.addEventListener("click", () => {
+                toggleSearchHistory(document.querySelector("#model"), config, undefined);
+            });
             initSearchEvent(app, element.firstElementChild, config);
             updateSearchResult(config, element);
         }
@@ -777,6 +812,9 @@ const goAsset = () => {
             return;
         }
         assetInputEvent(assetsElement, localSearch);
+    });
+    inputElement.addEventListener("blur", () => {
+        saveAssetKeyList(inputElement);
     });
     assetInputEvent(assetsElement, localSearch);
     addClearButton({

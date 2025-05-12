@@ -17,7 +17,7 @@ import {Link} from "./Link";
 import {setPosition} from "../../util/setPosition";
 import {updateTransaction} from "../wysiwyg/transaction";
 import {Constants} from "../../constants";
-import {copyPlainText, openByMobile, readText, setStorageVal} from "../util/compatibility";
+import {copyPlainText, openByMobile, readClipboard, setStorageVal} from "../util/compatibility";
 import {upDownHint} from "../../util/upDownHint";
 import {highlightRender} from "../render/highlightRender";
 import {getContenteditableElement, hasNextSibling, hasPreviousSibling} from "../wysiwyg/getBlock";
@@ -27,9 +27,6 @@ import {hintRenderTemplate, hintRenderWidget} from "../hint/extend";
 import {blockRender} from "../render/blockRender";
 /// #if !BROWSER
 import {openBy} from "../../editor/util";
-/// #endif
-/// #if !MOBILE
-import {moveResize} from "../../dialog/moveResize";
 /// #endif
 import {fetchPost} from "../../util/fetch";
 import {isArrayEqual, isMobile} from "../../util/functions";
@@ -46,8 +43,9 @@ import {mathRender} from "../render/mathRender";
 import {linkMenu} from "../../menus/protyle";
 import {addScript} from "../util/addScript";
 import {confirmDialog} from "../../dialog/confirmDialog";
-import {pasteAsPlainText, pasteEscaped, pasteText} from "../util/paste";
+import {paste, pasteAsPlainText, pasteEscaped} from "../util/paste";
 import {escapeHtml} from "../../util/escape";
+import {resizeSide} from "../../history/resizeSide";
 
 export class Toolbar {
     public element: HTMLElement;
@@ -69,7 +67,16 @@ export class Toolbar {
         /// #endif
         this.toolbarHeight = 29;
         protyle.app.plugins.forEach(item => {
-            options.toolbar = toolbarKeyToMenu(item.updateProtyleToolbar(options.toolbar));
+            const pluginToolbar = item.updateProtyleToolbar(options.toolbar);
+            pluginToolbar.forEach(toolbarItem => {
+                if (typeof toolbarItem === "string" || Constants.INLINE_TYPE.concat("|").includes(toolbarItem.name) || !toolbarItem.hotkey) {
+                    return;
+                }
+                if (window.siyuan.config.keymap.plugin && window.siyuan.config.keymap.plugin[item.name] && window.siyuan.config.keymap.plugin[item.name][toolbarItem.name]) {
+                    toolbarItem.hotkey = window.siyuan.config.keymap.plugin[item.name][toolbarItem.name].custom;
+                }
+            });
+            options.toolbar = toolbarKeyToMenu(pluginToolbar);
         });
         options.toolbar.forEach((menuItem: IMenuItem) => {
             const itemElement = this.genItem(protyle, menuItem);
@@ -81,7 +88,16 @@ export class Toolbar {
         this.element.innerHTML = "";
         protyle.options.toolbar = toolbarKeyToMenu(Constants.PROTYLE_TOOLBAR);
         protyle.app.plugins.forEach(item => {
-            protyle.options.toolbar = toolbarKeyToMenu(item.updateProtyleToolbar(protyle.options.toolbar));
+            const pluginToolbar = item.updateProtyleToolbar(protyle.options.toolbar);
+            pluginToolbar.forEach(toolbarItem => {
+                if (typeof toolbarItem === "string" || Constants.INLINE_TYPE.concat("|").includes(toolbarItem.name) || !toolbarItem.hotkey) {
+                    return;
+                }
+                if (window.siyuan.config.keymap.plugin && window.siyuan.config.keymap.plugin[item.name] && window.siyuan.config.keymap.plugin[item.name][toolbarItem.name]) {
+                    toolbarItem.hotkey = window.siyuan.config.keymap.plugin[item.name][toolbarItem.name].custom;
+                }
+            });
+            protyle.options.toolbar = toolbarKeyToMenu(pluginToolbar);
         });
         protyle.options.toolbar.forEach((menuItem: IMenuItem) => {
             const itemElement = this.genItem(protyle, menuItem);
@@ -153,7 +169,7 @@ export class Toolbar {
         this.toolbarHeight = this.element.clientHeight;
         const y = rangePosition.top - this.toolbarHeight - 4;
         this.element.setAttribute("data-inity", y + Constants.ZWSP + protyle.contentElement.scrollTop.toString());
-        setPosition(this.element, rangePosition.left - 52, y);
+        setPosition(this.element, rangePosition.left - 52, Math.max(y, protyle.element.getBoundingClientRect().top + 30));
         this.element.querySelectorAll(".protyle-toolbar__item--current").forEach(item => {
             item.classList.remove("protyle-toolbar__item--current");
         });
@@ -213,7 +229,7 @@ export class Toolbar {
 
     public setInlineMark(protyle: IProtyle, type: string, action: "range" | "toolbar", textObj?: ITextOption) {
         const nodeElement = hasClosestBlock(this.range.startContainer);
-        if (!nodeElement) {
+        if (!nodeElement || nodeElement.getAttribute("data-type") === "NodeCodeBlock") {
             return;
         }
         const endElement = hasClosestBlock(this.range.endContainer);
@@ -226,11 +242,21 @@ export class Toolbar {
         }
         const rangeTypes = this.getCurrentType(this.range);
 
-        // https://github.com/siyuan-note/siyuan/issues/6501
-        // https://github.com/siyuan-note/siyuan/issues/12877
-        if (rangeTypes.length === 1 && ["block-ref", "file-annotation-ref", "a", "inline-memo", "inline-math", "tag"].includes(rangeTypes[0]) && type === "clear") {
-            return;
+        if (rangeTypes.length === 1) {
+            // https://github.com/siyuan-note/siyuan/issues/6501
+            // https://github.com/siyuan-note/siyuan/issues/12877
+            if (["block-ref", "virtual-block-ref", "file-annotation-ref", "a", "inline-memo", "inline-math", "tag"].includes(rangeTypes[0]) && type === "clear") {
+                return;
+            }
         }
+        // https://github.com/siyuan-note/siyuan/issues/14534
+        if (rangeTypes.includes("text") && type === "text" && textObj && this.range.startContainer.nodeType === 3 && this.range.startContainer.isSameNode(this.range.endContainer)) {
+            const selectParentElement = this.range.startContainer.parentElement;
+            if (selectParentElement && hasSameTextStyle(null, selectParentElement, textObj)) {
+                return;
+            }
+        }
+
         const selectText = this.range.toString();
         fixTableRange(this.range);
         let previousElement: HTMLElement;
@@ -247,6 +273,10 @@ export class Toolbar {
             }
         } else if (previousSibling && previousSibling.nodeType !== 3 && this.range.startOffset === 0) {
             // **aaa**bbb 选中 bbb 加粗
+            previousElement = previousSibling as HTMLElement;
+        } else if (["code", "tag", "kbd"].includes(type) && previousSibling && previousSibling.nodeType === 1 &&
+            this.range.startOffset === 1 && this.range.startContainer.textContent.startsWith(Constants.ZWSP)) {
+            // 合并相同元素第二条第一个操作 https://github.com/siyuan-note/siyuan/issues/14290
             previousElement = previousSibling as HTMLElement;
         }
         let isEndSpan = false;
@@ -291,7 +321,7 @@ export class Toolbar {
         )) {
             // 移除
             if (type === "clear") {
-                toolbarElement.querySelectorAll('[data-type="em"],[data-type="u"],[data-type="s"],[data-type="mark"],[data-type="sup"],[data-type="sub"],[data-type="strong"]').forEach(item => {
+                toolbarElement.querySelectorAll('[data-type="strong"],[data-type="em"],[data-type="u"],[data-type="s"],[data-type="mark"],[data-type="sup"],[data-type="sub"],[data-type="kbd"],[data-type="mark"],[data-type="code"]').forEach(item => {
                     item.classList.remove("protyle-toolbar__item--current");
                 });
             } else if (actionBtn) {
@@ -310,7 +340,7 @@ export class Toolbar {
                     // 遇到以下类型结尾不应继承 https://github.com/siyuan-note/siyuan/issues/7200
                     let removeIndex = 0;
                     while (removeIndex < rangeTypes.length) {
-                        if (["inline-memo", "text", "block-ref", "file-annotation-ref", "a"].includes(rangeTypes[removeIndex])) {
+                        if (["inline-memo", "text", "block-ref", "virtual-block-ref", "file-annotation-ref", "a"].includes(rangeTypes[removeIndex])) {
                             rangeTypes.splice(removeIndex, 1);
                         } else {
                             ++removeIndex;
@@ -373,14 +403,22 @@ export class Toolbar {
                             item.style.backgroundColor = "";
                             item.style.fontSize = "";
                         }
-                        if (index === 0 && previousElement && previousElement.nodeType !== 3 &&
+                        const previousIsSame = index === 0 && previousElement && previousElement.nodeType !== 3 &&
                             isArrayEqual(types, (previousElement.getAttribute("data-type") || "").split(" ")) &&
-                            hasSameTextStyle(item, previousElement, textObj)) {
+                            hasSameTextStyle(item, previousElement, textObj);
+                        const nextIsSame = index === contents.childNodes.length - 1 && nextElement && nextElement.nodeType !== 3 &&
+                            isArrayEqual(types, (nextElement.getAttribute("data-type") || "").split(" ")) &&
+                            hasSameTextStyle(item, nextElement, textObj);
+                        if (previousIsSame) {
                             previousIndex = previousElement.textContent.length;
                             previousElement.innerHTML = previousElement.innerHTML + item.innerHTML;
-                        } else if (index === contents.childNodes.length - 1 && nextElement && nextElement.nodeType !== 3 &&
-                            isArrayEqual(types, (nextElement.getAttribute("data-type") || "").split(" ")) &&
-                            hasSameTextStyle(item, nextElement, textObj)) {
+                            if (nextIsSame) {
+                                nextIndex = previousElement.textContent.length;
+                                previousElement.innerHTML = previousElement.innerHTML + nextElement.innerHTML;
+                                nextElement.remove();
+                                nextElement = previousElement;
+                            }
+                        } else if (nextIsSame) {
                             nextIndex = item.textContent.length;
                             nextElement.innerHTML = item.innerHTML + nextElement.innerHTML;
                         } else {
@@ -405,11 +443,15 @@ export class Toolbar {
                 if (isEndSpan) {
                     let removeIndex = 0;
                     while (removeIndex < rangeTypes.length) {
-                        if (["inline-memo", "text", "block-ref", "file-annotation-ref", "a"].includes(rangeTypes[removeIndex])) {
+                        if (["inline-memo", "text", "block-ref", "virtual-block-ref", "file-annotation-ref", "a"].includes(rangeTypes[removeIndex])) {
                             rangeTypes.splice(removeIndex, 1);
                         } else {
                             ++removeIndex;
                         }
+                    }
+                    // https://github.com/siyuan-note/siyuan/issues/14421
+                    if (rangeTypes.length === 0) {
+                        rangeTypes.push(type);
                     }
                 }
                 inlineElement.setAttribute("data-type", [...new Set(rangeTypes)].join(" "));
@@ -430,6 +472,7 @@ export class Toolbar {
                     }
                 }
                 contents.childNodes.forEach((item: HTMLElement, index) => {
+                    let removeText = "";
                     if (item.nodeType === 3) {
                         if (index === 0 && previousElement && previousElement.nodeType !== 3 &&
                             type === previousElement.getAttribute("data-type") &&
@@ -446,14 +489,53 @@ export class Toolbar {
                             item.textContent !== Constants.ZWSP ||
                             // tag 会有零宽空格 https://github.com/siyuan-note/siyuan/issues/12922
                             (item.textContent === Constants.ZWSP && !rangeTypes.includes("img"))) {
-                            const inlineElement = document.createElement("span");
-                            inlineElement.setAttribute("data-type", type);
-                            inlineElement.textContent = item.textContent;
-                            setFontStyle(inlineElement, textObj);
-                            if (type === "text" && !inlineElement.getAttribute("style")) {
-                                newNodes.push(item);
-                            } else {
-                                newNodes.push(inlineElement);
+                            // ZWSP spin 后会在行内元素外 https://github.com/siyuan-note/siyuan/issues/13871
+                            if (item.textContent.startsWith(Constants.ZWSP) &&
+                                // https://github.com/siyuan-note/siyuan/issues/14639
+                                item.textContent.length > 1) {
+                                newNodes.push(document.createTextNode(Constants.ZWSP));
+                                item.textContent = item.textContent.substring(1);
+                            }
+                            if (item.textContent) {
+                                // https://github.com/siyuan-note/siyuan/issues/14204
+                                while (item.textContent.endsWith("\n")) {
+                                    item.textContent = item.textContent.substring(0, item.textContent.length - 1);
+                                    removeText += "\n";
+                                }
+                                const inlineElement = document.createElement("span");
+                                inlineElement.setAttribute("data-type", type);
+                                inlineElement.textContent = item.textContent;
+                                setFontStyle(inlineElement, textObj);
+                                // 合并相同元素 https://github.com/siyuan-note/siyuan/issues/14290
+                                const previousIsSame = index === 0 && previousElement && previousElement.nodeType !== 3 &&
+                                    type === previousElement.getAttribute("data-type") &&
+                                    hasSameTextStyle(inlineElement, previousElement, textObj);
+                                const nextIsSame = index === contents.childNodes.length - 1 && nextElement && nextElement.nodeType !== 3 &&
+                                    type === nextElement.getAttribute("data-type") &&
+                                    hasSameTextStyle(inlineElement, nextElement, textObj);
+                                if (previousIsSame) {
+                                    previousIndex = previousElement.textContent.length;
+                                    previousElement.innerHTML = previousElement.innerHTML + inlineElement.innerHTML.replace(Constants.ZWSP, "");
+                                    if (nextIsSame) {
+                                        nextIndex = previousElement.textContent.length;
+                                        previousElement.innerHTML = previousElement.innerHTML + nextElement.innerHTML.replace(Constants.ZWSP, "");
+                                        const nextPrevSibling = hasPreviousSibling(nextElement);
+                                        if (nextPrevSibling && nextPrevSibling.textContent === Constants.ZWSP) {
+                                            nextPrevSibling.remove();
+                                        }
+                                        nextElement.remove();
+                                        nextElement = previousElement;
+                                    }
+                                } else if (nextIsSame) {
+                                    nextIndex = inlineElement.textContent.length;
+                                    nextElement.innerHTML = inlineElement.innerHTML + nextElement.innerHTML.replace(Constants.ZWSP, "");
+                                } else {
+                                    if (type === "text" && !inlineElement.getAttribute("style")) {
+                                        newNodes.push(item);
+                                    } else {
+                                        newNodes.push(inlineElement);
+                                    }
+                                }
                             }
                         } else {
                             newNodes.push(item);
@@ -469,6 +551,11 @@ export class Toolbar {
                         }
                         if (!types.includes("img")) {
                             types.push(type);
+                        }
+                        // 以下行内元素需用 ZWSP 开头 https://github.com/siyuan-note/siyuan/issues/13871
+                        if ((types.includes("code") || types.includes("tag") || types.includes("kbd")) &&
+                            !item.textContent.startsWith(Constants.ZWSP)) {
+                            item.insertAdjacentText("afterbegin", Constants.ZWSP);
                         }
                         // 上标和下标不能同时存在 https://github.com/siyuan-note/insider/issues/1049
                         if (type === "sub" && types.includes("sup")) {
@@ -519,7 +606,10 @@ export class Toolbar {
                                     return true;
                                 }
                             });
-                            item.textContent = item.getAttribute("data-content");
+                            if (item.querySelector(".katex")) {
+                                // 选中完整的数学公式才进行备注 https://github.com/siyuan-note/siyuan/issues/13667
+                                item.textContent = item.getAttribute("data-content");
+                            }
                         } else if (type === "inline-math" && types.includes("inline-memo")) {
                             // 数学公式和备注不能同时存在
                             types.find((item, index) => {
@@ -530,16 +620,46 @@ export class Toolbar {
                             });
                         }
                         types = [...new Set(types)];
-                        if (index === 0 && previousElement && previousElement.nodeType !== 3 &&
+                        if (types.includes("block-ref") && item.getAttribute("data-subtype") === "d") {
+                            // https://github.com/siyuan-note/siyuan/issues/14299
+                            if (previousElement && previousElement.nodeType !== 3 && previousElement.getAttribute("data-id") === item.getAttribute("data-id")) {
+                                previousElement.setAttribute("data-subtype", "s");
+                                item.setAttribute("data-subtype", "s");
+                            }
+                            if (nextElement && nextElement.nodeType !== 3 && nextElement.getAttribute("data-id") === item.getAttribute("data-id")) {
+                                nextElement.setAttribute("data-subtype", "s");
+                                item.setAttribute("data-subtype", "s");
+                            }
+                        }
+                        let previousIsSame = false;
+                        previousIsSame = index === 0 && previousElement && previousElement.nodeType !== 3 &&
                             isArrayEqual(types, (previousElement.getAttribute("data-type") || "").split(" ")) &&
-                            hasSameTextStyle(item, previousElement, textObj)) {
-                            previousIndex = previousElement.textContent.length;
-                            previousElement.innerHTML = previousElement.innerHTML + item.innerHTML;
-                        } else if (index === contents.childNodes.length - 1 && nextElement && nextElement.nodeType !== 3 &&
+                            hasSameTextStyle(item, previousElement, textObj);
+                        if (index === 0 && !previousIsSame && previousElement && previousElement.nodeType === 3 && previousElement.textContent === Constants.ZWSP) {
+                            const tempPreviousElement = previousElement.previousSibling as HTMLElement;
+                            previousIsSame = tempPreviousElement && tempPreviousElement.nodeType !== 3 &&
+                                isArrayEqual(types, (tempPreviousElement.getAttribute("data-type") || "").split(" ")) &&
+                                hasSameTextStyle(item, tempPreviousElement, textObj);
+                            if (previousIsSame) {
+                                previousElement.remove();
+                                previousElement = tempPreviousElement;
+                            }
+                        }
+                        const nextIsSame = index === contents.childNodes.length - 1 && nextElement && nextElement.nodeType !== 3 &&
                             isArrayEqual(types, (nextElement.getAttribute("data-type") || "").split(" ")) &&
-                            hasSameTextStyle(item, nextElement, textObj)) {
+                            hasSameTextStyle(item, nextElement, textObj);
+                        if (previousIsSame) {
+                            previousIndex = previousElement.textContent.length;
+                            previousElement.innerHTML = previousElement.innerHTML + item.innerHTML.replace(Constants.ZWSP, "");
+                            if (nextIsSame) {
+                                nextIndex = previousElement.textContent.length;
+                                previousElement.innerHTML = previousElement.innerHTML + nextElement.innerHTML.replace(Constants.ZWSP, "");
+                                nextElement.remove();
+                                nextElement = previousElement;
+                            }
+                        } else if (nextIsSame) {
                             nextIndex = item.textContent.length;
-                            nextElement.innerHTML = item.innerHTML + nextElement.innerHTML;
+                            nextElement.innerHTML = item.innerHTML + nextElement.innerHTML.replace(Constants.ZWSP, "");
                         } else if (item.tagName !== "BR" && item.tagName !== "IMG") {
                             item.setAttribute("data-type", types.join(" "));
                             setFontStyle(item, textObj);
@@ -559,9 +679,13 @@ export class Toolbar {
                             newNodes.push(item);
                         }
                     }
+                    if (removeText) {
+                        newNodes.push(document.createTextNode(removeText));
+                    }
                 });
             }
         }
+
         if (this.range.startContainer.nodeType !== 3 && (this.range.startContainer as HTMLElement).tagName === "SPAN" &&
             this.range.startContainer.isSameNode(this.range.endContainer) && !isEndSpan) {
             // 切割元素
@@ -574,7 +698,15 @@ export class Toolbar {
             this.range.setEnd(startContainer.lastChild, startContainer.lastChild.textContent.length);
             afterElement.append(this.range.extractContents());
             startContainer.after(afterElement);
-            this.range.setStartBefore(afterElement);
+            // https://github.com/siyuan-note/siyuan/issues/13871#issuecomment-2662855319
+            const firstTypes = startContainer.getAttribute("data-type").split(" ");
+            if (firstTypes.includes("code") || firstTypes.includes("tag") || firstTypes.includes("kbd")) {
+                afterElement.insertAdjacentText("beforebegin", Constants.ZWSP + Constants.ZWSP);
+                afterElement.insertAdjacentText("afterbegin", Constants.ZWSP);
+                this.range.setStart(afterElement.previousSibling, 1);
+            } else {
+                this.range.setStartBefore(afterElement);
+            }
             this.range.collapse(true);
         }
         for (let i = 0; i < newNodes.length; i++) {
@@ -631,11 +763,12 @@ export class Toolbar {
                         currentNewNode.after(document.createTextNode(Constants.ZWSP));
                     }
                 } else if (currentNewNode.nodeType === 3 && ["code", "tag", "kbd", "clear"].includes(type)) {
-                    const currentPreviousSibling = hasPreviousSibling(currentNewNode) as HTMLElement;
+                    let currentPreviousSibling = hasPreviousSibling(currentNewNode) as HTMLElement;
                     let previousIsCTK = false;
+                    let currentPreviousSiblingTypes: string[];
                     if (currentPreviousSibling) {
                         if (currentPreviousSibling.nodeType === 1) {
-                            const currentPreviousSiblingTypes = currentPreviousSibling.dataset.type.split(" ");
+                            currentPreviousSiblingTypes = currentPreviousSibling.dataset.type.split(" ");
                             if (currentPreviousSiblingTypes.includes("code") || currentPreviousSiblingTypes.includes("tag") || currentPreviousSiblingTypes.includes("kbd")) {
                                 previousIsCTK = true;
                             }
@@ -643,15 +776,17 @@ export class Toolbar {
                             currentPreviousSibling.textContent = currentPreviousSibling.textContent.substring(0, currentPreviousSibling.textContent.length - 1);
                         }
                     }
-                    const currentNextSibling = hasNextSibling(currentNewNode) as HTMLElement;
+                    let currentNextSibling = hasNextSibling(currentNewNode) as HTMLElement;
                     let nextIsCTK = false;
+                    let currentNextSiblingTypes: string[];
                     if (currentNextSibling) {
                         if (currentNextSibling.nodeType === 1) {
-                            const currentNextSiblingTypes = currentNextSibling.dataset.type.split(" ");
+                            currentNextSiblingTypes = currentNextSibling.dataset.type.split(" ");
                             if (currentNextSiblingTypes.includes("code") || currentNextSiblingTypes.includes("tag") || currentNextSiblingTypes.includes("kbd")) {
                                 nextIsCTK = true;
                             }
-                        } else if (currentNextSibling.textContent.startsWith(Constants.ZWSP)) {
+                        } else if (currentNextSibling.textContent.startsWith(Constants.ZWSP) &&
+                            (!previousIsCTK || previousIsCTK && currentPreviousSibling.textContent === Constants.ZWSP)) {
                             currentNextSibling.textContent = currentNextSibling.textContent.substring(1);
                         }
                     }
@@ -659,16 +794,43 @@ export class Toolbar {
                         if (previousIsCTK) {
                             if (!currentNewNode.textContent.startsWith(Constants.ZWSP)) {
                                 currentNewNode.textContent = Constants.ZWSP + currentNewNode.textContent;
+                            } else if (nextIsCTK && isArrayEqual(currentNextSiblingTypes, currentPreviousSiblingTypes) &&
+                                hasSameTextStyle(currentNextSibling, currentPreviousSibling, textObj)) {
+                                // 行内元素设置第一条第二个操作 https://github.com/siyuan-note/siyuan/issues/14290
+                                newNodes.splice(i, 1);
+                                i--;
+                                currentNewNode.remove();
+                                previousIndex = currentPreviousSibling.innerHTML.length;
+                                nextElement = previousElement;
+                                nextIndex = currentPreviousSibling.innerHTML.length + nextIndex;
+                                currentPreviousSibling.innerHTML = currentPreviousSibling.innerHTML + currentNextSibling.innerHTML.replace(Constants.ZWSP, "");
+                                currentNextSibling.remove();
                             }
                         } else if (currentNewNode.textContent.startsWith(Constants.ZWSP)) {
-                            currentNewNode.textContent = currentNewNode.textContent.substring(1);
+                            currentPreviousSibling = hasPreviousSibling(currentNewNode) as HTMLElement;
+                            if (currentPreviousSibling.nodeType === 1) {
+                                const currentPreviousSiblingTypes = currentPreviousSibling.dataset.type.split(" ");
+                                if (!currentPreviousSiblingTypes.includes("code") && !currentPreviousSiblingTypes.includes("tag") && !currentPreviousSiblingTypes.includes("kbd")) {
+                                    currentNewNode.textContent = currentNewNode.textContent.substring(1);
+                                }
+                            } else {
+                                currentNewNode.textContent = currentNewNode.textContent.substring(1);
+                            }
                         }
                         if (nextIsCTK) {
                             if (!currentNextSibling.textContent.startsWith(Constants.ZWSP)) {
                                 currentNextSibling.textContent = Constants.ZWSP + currentNextSibling.textContent;
                             }
                         } else if (currentNewNode.textContent.endsWith(Constants.ZWSP)) {
-                            currentNewNode.textContent = currentNewNode.textContent.substring(0, currentNewNode.textContent.length - 1);
+                            currentNextSibling = hasNextSibling(currentNewNode) as HTMLElement;
+                            if (currentNextSibling.nodeType === 1) {
+                                const currentNextSiblingTypes = currentNextSibling.dataset.type.split(" ");
+                                if (!currentNextSiblingTypes.includes("code") && !currentNextSiblingTypes.includes("tag") && !currentNextSiblingTypes.includes("kbd")) {
+                                    currentNewNode.textContent = currentNewNode.textContent.substring(0, currentNewNode.textContent.length - 1);
+                                }
+                            } else {
+                                currentNewNode.textContent = currentNewNode.textContent.substring(0, currentNewNode.textContent.length - 1);
+                            }
                         }
                     }
                 }
@@ -686,7 +848,7 @@ export class Toolbar {
         if (nextElement) {
             this.mergeNode(nextElement.childNodes);
         }
-        if (previousIndex) {
+        if (typeof previousIndex === "number") {
             this.range.setStart(previousElement.firstChild, previousIndex);
         } else if (newNodes.length > 0) {
             if (newNodes[0].nodeType !== 3 && (newNodes[0] as HTMLElement).getAttribute("data-type") === "inline-math") {
@@ -710,7 +872,7 @@ export class Toolbar {
             // aaa**bbb** 选中 aaa 加粗
             this.range.setStart(nextElement.firstChild, 0);
         }
-        if (nextIndex) {
+        if (typeof nextIndex === "number") {
             this.range.setEnd(nextElement.lastChild, nextIndex);
         } else if (newNodes.length > 0) {
             const lastNewNode = newNodes[newNodes.length - 1];
@@ -953,8 +1115,8 @@ export class Toolbar {
                 return;
             }
             setTimeout(() => {
-                addScript("/stage/protyle/js/html2canvas.min.js?v=1.4.1", "protyleHtml2canvas").then(() => {
-                    window.html2canvas(renderElement, {useCORS: true}).then((canvas) => {
+                addScript("/stage/protyle/js/html-to-image.min.js?v=1.11.13", "protyleHtml2image").then(() => {
+                    window.htmlToImage.toCanvas(renderElement).then((canvas) => {
                         canvas.toBlob((blob: Blob) => {
                             const formData = new FormData();
                             formData.append("file", blob);
@@ -968,14 +1130,6 @@ export class Toolbar {
                 });
             }, Constants.TIMEOUT_LOAD);
         };
-        /// #if !MOBILE
-        moveResize(this.subElement, () => {
-            const pinElement = headerElement.querySelector('[data-type="pin"]');
-            pinElement.querySelector("svg use").setAttribute("xlink:href", "#iconUnpin");
-            pinElement.setAttribute("aria-label", window.siyuan.languages.unpin);
-            this.subElement.firstElementChild.setAttribute("data-drag", "true");
-        });
-        /// #endif
         const textElement = this.subElement.querySelector(".b3-text-field") as HTMLTextAreaElement;
         if (types.includes("NodeHTMLBlock")) {
             textElement.value = Lute.UnEscapeHTMLStr(renderElement.querySelector("protyle-html").getAttribute("data-content") || "");
@@ -1278,7 +1432,7 @@ export class Toolbar {
         this.subElement.style.width = "";
         this.subElement.style.padding = "";
         this.subElement.innerHTML = `<div style="max-height:50vh" class="fn__flex">
-<div class="fn__flex-column" style="${isMobile() ? "width: 100%" : "min-width: 260px;max-width:50vw"}">
+<div class="fn__flex-column" style="${isMobile() ? "width: 100%" : "width: 256px"}">
     <div class="fn__flex" style="margin: 0 8px 4px 8px">
         <input class="b3-text-field fn__flex-1"/>
         <span class="fn__space"></span>
@@ -1288,9 +1442,14 @@ export class Toolbar {
     </div>
     <div class="b3-list fn__flex-1 b3-list--background" style="position: relative"><img style="margin: 0 auto;display: block;width: 64px;height: 64px" src="/stage/loading-pure.svg"></div>
 </div>
-<div style="width: 520px;${isMobile() || window.outerWidth < window.outerWidth / 2 + 520 ? "display:none" : ""};overflow: auto;"></div>
+<div class="toolbarResize" style="    cursor: col-resize;
+    box-shadow: 2px 0 0 0 var(--b3-theme-surface) inset, 3px 0 0 0 var(--b3-border-color) inset;
+    width: 5px;
+    margin-left: -2px;"></div>
+<div style="width: 520px;${isMobile() || window.outerWidth < window.outerWidth / 2 + 520 ? "display:none;" : ""}overflow: auto;"></div>
 </div>`;
         const listElement = this.subElement.querySelector(".b3-list");
+        resizeSide(this.subElement.querySelector(".toolbarResize"), listElement.parentElement);
         const previewElement = this.subElement.firstElementChild.lastElementChild;
         let previewPath: string;
         listElement.addEventListener("mouseover", (event) => {
@@ -1305,6 +1464,7 @@ export class Toolbar {
             }
             previewPath = currentPath;
             previewTemplate(previewPath, previewElement, protyle.block.parentID);
+            event.stopPropagation();
         });
         const inputElement = this.subElement.querySelector("input");
         inputElement.addEventListener("keydown", (event: KeyboardEvent) => {
@@ -1573,8 +1733,8 @@ ${item.name}
                     document.execCommand("paste");
                 } else {
                     try {
-                        const clipText = await readText();
-                        pasteText(protyle, clipText, nodeElement);
+                        const text = await readClipboard();
+                        paste(protyle, Object.assign(text, {target: nodeElement as HTMLElement}));
                     } catch (e) {
                         console.log(e);
                     }

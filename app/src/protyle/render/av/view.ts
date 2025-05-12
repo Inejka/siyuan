@@ -17,6 +17,7 @@ export const openViewMenu = (options: { protyle: IProtyle, blockElement: HTMLEle
         return;
     }
     menu.addItem({
+        id: "rename",
         icon: "iconEdit",
         label: window.siyuan.languages.rename,
         click() {
@@ -32,6 +33,7 @@ export const openViewMenu = (options: { protyle: IProtyle, blockElement: HTMLEle
         }
     });
     menu.addItem({
+        id: "config",
         icon: "iconSettings",
         label: window.siyuan.languages.config,
         click() {
@@ -45,6 +47,7 @@ export const openViewMenu = (options: { protyle: IProtyle, blockElement: HTMLEle
     });
     menu.addSeparator();
     menu.addItem({
+        id: "duplicate",
         icon: "iconCopy",
         label: window.siyuan.languages.duplicate,
         click() {
@@ -67,6 +70,7 @@ export const openViewMenu = (options: { protyle: IProtyle, blockElement: HTMLEle
     });
     if (options.blockElement.querySelectorAll(".layout-tab-bar .item").length > 1) {
         menu.addItem({
+            id: "delete",
             icon: "iconTrashcan",
             label: window.siyuan.languages.delete,
             click() {
@@ -207,12 +211,12 @@ export const getViewHTML = (data: IAV) => {
             <span class="b3-menu__avemoji" data-type="update-view-icon">${view.icon ? unicode2Emoji(view.icon) : '<svg style="height: 14px;width: 14px"><use xlink:href="#iconTable"></use></svg>'}</span>
             <div class="b3-form__icona fn__block">
                 <input data-type="name" class="b3-text-field b3-form__icona-input" type="text" data-value="${escapeAttr(view.name)}">
-                <svg data-position="top" class="b3-form__icona-icon ariaLabel" aria-label="${view.desc ? escapeAriaLabel(view.desc) : window.siyuan.languages.addDesc}"><use xlink:href="#iconInfo"></use></svg>
+                <svg data-position="north" class="b3-form__icona-icon ariaLabel" aria-label="${view.desc ? escapeAriaLabel(view.desc) : window.siyuan.languages.addDesc}"><use xlink:href="#iconInfo"></use></svg>
             </div>
         </div>
         <div class="fn__none">
             <div class="fn__hr"></div>
-            <textarea style="margin-left: 22px;width: calc(100% - 22px);" rows="1" data-type="desc" class="b3-text-field fn__size200" type="text" data-value="${escapeAttr(view.desc)}">${view.desc}</textarea>
+            <textarea style="margin-left: 22px;width: calc(100% - 22px);" placeholder="${window.siyuan.languages.addDesc}" rows="1" data-type="desc" class="b3-text-field fn__size200" type="text" data-value="${escapeAttr(view.desc)}">${view.desc}</textarea>
         </div>
     </div>
 </button>
@@ -319,7 +323,7 @@ export const getSwitcherHTML = (views: IAVView[], viewId: string) => {
     <svg class="b3-menu__icon fn__grab"><use xlink:href="#iconDrag"></use></svg>
     <div class="b3-menu__label fn__flex" data-type="av-view-switch">
         ${item.icon ? unicode2Emoji(item.icon, "b3-menu__icon", true) : '<svg class="b3-menu__icon"><use xlink:href="#iconTable"></use></svg>'}
-        ${item.name}
+        <span class="fn__ellipsis">${item.name}</span>
     </div>
     <svg class="b3-menu__action" data-type="av-view-edit"><use xlink:href="#iconEdit"></use></svg>
 </button>`;
@@ -330,7 +334,7 @@ export const getSwitcherHTML = (views: IAVView[], viewId: string) => {
     <span class="b3-menu__label">${window.siyuan.languages.newView}</span>
 </button>
 <button class="b3-menu__separator"></button>
-<div class="b3-menu__item b3-menu__item--readonly fn__flex-shrink" data-type="nobg">
+<div class="b3-menu__item fn__flex-shrink" data-type="nobg">
     <input class="b3-text-field fn__block" type="text" style="margin: 4px 0" placeholder="${window.siyuan.languages.search}">
 </div>
 <div class="fn__flex-1" style="overflow: auto">

@@ -112,6 +112,9 @@ func (tx *Transaction) doUnfoldHeading(operation *Operation) (ret *TxErr) {
 	}
 	sql.UpsertTreeQueue(tree)
 
+	// 展开折叠的标题后显示块引用计数 Display reference counts after unfolding headings https://github.com/siyuan-note/siyuan/issues/13618
+	fillBlockRefCount(children)
+
 	luteEngine := NewLute()
 	operation.RetData = renderBlockDOMByNodes(children, luteEngine)
 	return
@@ -121,6 +124,8 @@ func Doc2Heading(srcID, targetID string, after bool) (srcTreeBox, srcTreePath st
 	if !ast.IsNodeIDPattern(srcID) || !ast.IsNodeIDPattern(targetID) {
 		return
 	}
+
+	FlushTxQueue()
 
 	srcTree, _ := LoadTreeByBlockID(srcID)
 	if nil == srcTree {
@@ -156,6 +161,9 @@ func Doc2Heading(srcID, targetID string, after bool) (srcTreeBox, srcTreePath st
 		err = ErrBlockNotFound
 		return
 	}
+
+	// 生成文档历史 https://github.com/siyuan-note/siyuan/issues/14359
+	generateOpTypeHistory(srcTree, HistoryOpUpdate)
 
 	// 移动前先删除引用 https://github.com/siyuan-note/siyuan/issues/7819
 	sql.DeleteRefsTreeQueue(srcTree)
@@ -246,10 +254,6 @@ func Doc2Heading(srcID, targetID string, after bool) (srcTreeBox, srcTreePath st
 		pivot.InsertAfter(heading)
 	}
 
-	if contentPivot := treenode.GetNodeInTree(targetTree, targetID); nil != contentPivot && ast.NodeParagraph == contentPivot.Type && nil == contentPivot.FirstChild { // 插入到空的段落块下
-		contentPivot.Unlink()
-	}
-
 	box := Conf.Box(srcTree.Box)
 	if removeErr := box.Remove(srcTree.Path); nil != removeErr {
 		logging.LogWarnf("remove tree [%s] failed: %s", srcTree.Path, removeErr)
@@ -270,10 +274,16 @@ func Doc2Heading(srcID, targetID string, after bool) (srcTreeBox, srcTreePath st
 	IncSync()
 	RefreshBacklink(srcTree.ID)
 	RefreshBacklink(targetTree.ID)
+	go func() {
+		sql.FlushQueue()
+		ResetVirtualBlockRefCache()
+	}()
 	return
 }
 
-func Heading2Doc(srcHeadingID, targetBoxID, targetPath string) (srcRootBlockID, newTargetPath string, err error) {
+func Heading2Doc(srcHeadingID, targetBoxID, targetPath, previousPath string) (srcRootBlockID, newTargetPath string, err error) {
+	FlushTxQueue()
+
 	srcTree, _ := LoadTreeByBlockID(srcHeadingID)
 	if nil == srcTree {
 		err = ErrBlockNotFound
@@ -296,7 +306,7 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath string) (srcRootBlockID, 
 	}
 
 	box := Conf.Box(targetBoxID)
-	headingText := getNodeRefText0(headingNode, Conf.Editor.BlockRefDynamicAnchorTextMaxLen)
+	headingText := getNodeRefText0(headingNode, Conf.Editor.BlockRefDynamicAnchorTextMaxLen, true)
 	if strings.Contains(headingText, "/") {
 		headingText = strings.ReplaceAll(headingText, "/", "_")
 		util.PushMsg(Conf.language(246), 7000)
@@ -305,15 +315,33 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath string) (srcRootBlockID, 
 	moveToRoot := "/" == targetPath
 	toHP := path.Join("/", headingText)
 	toFolder := "/"
-
-	if !moveToRoot {
-		toBlock := treenode.GetBlockTreeRootByPath(targetBoxID, targetPath)
-		if nil == toBlock {
+	if "" != previousPath {
+		previousDoc := treenode.GetBlockTreeRootByPath(targetBoxID, previousPath)
+		if nil == previousDoc {
 			err = ErrBlockNotFound
 			return
 		}
-		toHP = path.Join(toBlock.HPath, headingText)
-		toFolder = path.Join(path.Dir(targetPath), toBlock.ID)
+		parentPath := path.Dir(previousPath)
+		if "/" != parentPath {
+			parentPath = strings.TrimSuffix(parentPath, "/") + ".sy"
+			parentDoc := treenode.GetBlockTreeRootByPath(targetBoxID, parentPath)
+			if nil == parentDoc {
+				err = ErrBlockNotFound
+				return
+			}
+			toHP = path.Join(parentDoc.HPath, headingText)
+			toFolder = path.Join(path.Dir(parentPath), parentDoc.ID)
+		}
+	} else {
+		if !moveToRoot {
+			parentDoc := treenode.GetBlockTreeRootByPath(targetBoxID, targetPath)
+			if nil == parentDoc {
+				err = ErrBlockNotFound
+				return
+			}
+			toHP = path.Join(parentDoc.HPath, headingText)
+			toFolder = path.Join(path.Dir(targetPath), parentDoc.ID)
+		}
 	}
 
 	newTargetPath = path.Join(toFolder, srcHeadingID+".sy")
@@ -375,12 +403,20 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath string) (srcRootBlockID, 
 	newTree.Box, newTree.Path = targetBoxID, newTargetPath
 	newTree.Root.SetIALAttr("updated", util.CurrentTimeSecondsStr())
 	newTree.Root.Spec = "1"
-	box.addMinSort(path.Dir(newTargetPath), newTree.ID)
+	if "" != previousPath {
+		box.addSort(previousPath, newTree.ID)
+	} else {
+		box.addMinSort(path.Dir(newTargetPath), newTree.ID)
+	}
 	if err = indexWriteTreeUpsertQueue(newTree); err != nil {
 		return "", "", err
 	}
 	IncSync()
 	RefreshBacklink(srcTree.ID)
 	RefreshBacklink(newTree.ID)
+	go func() {
+		sql.FlushQueue()
+		ResetVirtualBlockRefCache()
+	}()
 	return
 }

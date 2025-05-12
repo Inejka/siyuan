@@ -14,7 +14,7 @@ export const highlightRender = (element: Element, cdn = Constants.PROTYLE_CDN) =
             // bazaar reademe
             codeElements = element.querySelectorAll("pre code");
             codeElements.forEach(item => {
-                item.parentElement.setAttribute("lineNumber", "false");
+                item.parentElement.setAttribute("linenumber", "false");
             });
         } else if (element.classList.contains("b3-typography")) {
             // preview & export html markdown
@@ -30,7 +30,7 @@ export const highlightRender = (element: Element, cdn = Constants.PROTYLE_CDN) =
 
     setCodeTheme(cdn);
 
-    addScript(`${cdn}/js/highlight.js/highlight.min.js?v=11.7.0`, "protyleHljsScript").then(() => {
+    addScript(`${cdn}/js/highlight.js/highlight.min.js?v=11.11.1`, "protyleHljsScript").then(() => {
         addScript(`${cdn}/js/highlight.js/third-languages.js?v=1.0.1`, "protyleHljsThirdScript").then(() => {
             codeElements.forEach((block: HTMLElement) => {
                 const iconElements = block.parentElement.querySelectorAll(".protyle-icon");
@@ -94,10 +94,12 @@ export const highlightRender = (element: Element, cdn = Constants.PROTYLE_CDN) =
                         block.firstElementChild.className = "protyle-linenumber__rows";
                         block.firstElementChild.setAttribute("contenteditable", "false");
                         lineNumberRender(block);
+                        block.style.display = "";
                     } else {
                         block.firstElementChild.className = "fn__none";
                         block.firstElementChild.innerHTML = "";
                         hljsElement.style.paddingLeft = "";
+                        block.style.display = "block";
                     }
                 }
                 hljsElement.innerHTML = window.hljs.highlight(
@@ -136,12 +138,13 @@ export const lineNumberRender = (block: HTMLElement) => {
 
     const lineNumberTemp = document.createElement("div");
     lineNumberTemp.className = "hljs";
+    // 不能使用 codeElement.clientWidth，被忽略小数点导致宽度不一致
     lineNumberTemp.setAttribute("style", `padding-left:${codeElement.style.paddingLeft};
-width: ${codeElement.clientWidth}px;
+width: ${codeElement.getBoundingClientRect().width}px;
 white-space:${codeElement.style.whiteSpace};
 word-break:${codeElement.style.wordBreak};
 font-variant-ligatures:${codeElement.style.fontVariantLigatures};
-box-sizing: border-box;position: absolute;padding-top:0 !important;padding-bottom:0 !important;min-height:auto !important;`);
+padding-right:0;max-height: none;box-sizing: border-box;position: absolute;padding-top:0 !important;padding-bottom:0 !important;min-height:auto !important;`);
     lineNumberTemp.setAttribute("contenteditable", "true");
     block.insertAdjacentElement("afterend", lineNumberTemp);
 
@@ -162,4 +165,16 @@ box-sizing: border-box;position: absolute;padding-top:0 !important;padding-botto
 
     lineNumberTemp.remove();
     block.firstElementChild.innerHTML = lineNumberHTML;
+    // https://github.com/siyuan-note/siyuan/issues/12726
+    if (block.scrollHeight > block.clientHeight) {
+        if (getSelection().rangeCount > 0) {
+            const range = getSelection().getRangeAt(0);
+            if (block.contains(range.startContainer)) {
+                const brElement = document.createElement("br");
+                range.insertNode(brElement);
+                brElement.scrollIntoView({block: "nearest"});
+                brElement.remove();
+            }
+        }
+    }
 };
