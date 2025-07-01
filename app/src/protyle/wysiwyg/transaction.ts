@@ -268,14 +268,14 @@ const updateEmbed = (protyle: IProtyle, operation: IOperation) => {
 
     const updateHTML = (item: Element, html: string) => {
         const tempElement = document.createElement("template");
-        tempElement.innerHTML = html;
+        tempElement.innerHTML = protyle.lute.SpinBlockDOM(html);
         tempElement.content.querySelectorAll('[contenteditable="true"]').forEach(editItem => {
             editItem.setAttribute("contenteditable", "false");
         });
         tempElement.content.querySelectorAll(".protyle-wysiwyg--select").forEach(selectItem => {
             selectItem.classList.remove("protyle-wysiwyg--select");
         });
-        const wbrElement = tempElement.querySelector("wbr");
+        const wbrElement = tempElement.content.querySelector("wbr");
         if (wbrElement) {
             wbrElement.remove();
         }
@@ -482,18 +482,20 @@ export const onTransaction = (protyle: IProtyle, operation: IOperation, isUndo: 
         // 缩放后仅更新局部 https://github.com/siyuan-note/siyuan/issues/14326
         if (updateElements.length === 0) {
             const newUpdateElement = protyle.wysiwyg.element.querySelector("[data-node-id]");
-            const newUpdateId = newUpdateElement.getAttribute("data-node-id");
-            const tempElement = document.createElement("template");
-            tempElement.innerHTML = operation.data;
-            const newTempElement = tempElement.content.querySelector(`[data-node-id="${newUpdateId}"]`);
-            if (newTempElement) {
-                updateElements.push(newUpdateElement);
-                operation.data = newTempElement.outerHTML;
-                operation.id = newUpdateId;
-                // https://github.com/siyuan-note/siyuan/issues/14326#issuecomment-2746140335
-                for (let i = 1; i < protyle.wysiwyg.element.childElementCount; i++) {
-                    protyle.wysiwyg.element.childNodes[i].remove();
-                    i--;
+            if (newUpdateElement) {
+                const newUpdateId = newUpdateElement.getAttribute("data-node-id");
+                const tempElement = document.createElement("template");
+                tempElement.innerHTML = operation.data;
+                const newTempElement = tempElement.content.querySelector(`[data-node-id="${newUpdateId}"]`);
+                if (newTempElement) {
+                    updateElements.push(newUpdateElement);
+                    operation.data = newTempElement.outerHTML;
+                    operation.id = newUpdateId;
+                    // https://github.com/siyuan-note/siyuan/issues/14326#issuecomment-2746140335
+                    for (let i = 1; i < protyle.wysiwyg.element.childElementCount; i++) {
+                        protyle.wysiwyg.element.childNodes[i].remove();
+                        i--;
+                    }
                 }
             }
         }
@@ -619,14 +621,16 @@ export const onTransaction = (protyle: IProtyle, operation: IOperation, isUndo: 
                     }, 450);
                 }
             });
+            const attrElements = item.querySelectorAll(".protyle-attr");
+            const attrElement = attrElements[attrElements.length - 1];
             if (data.new["custom-avs"] && !data.new["av-names"]) {
-                nodeAttrHTML += item.lastElementChild.querySelector(".protyle-attr--av")?.outerHTML || "";
+                nodeAttrHTML += attrElement.querySelector(".protyle-attr--av")?.outerHTML || "";
             }
-            const refElement = item.lastElementChild.querySelector(".protyle-attr--refcount");
+            const refElement = attrElement.querySelector(".protyle-attr--refcount");
             if (refElement) {
                 nodeAttrHTML += refElement.outerHTML;
             }
-            item.lastElementChild.innerHTML = nodeAttrHTML + Constants.ZWSP;
+            attrElement.innerHTML = nodeAttrHTML + Constants.ZWSP;
         });
         return;
     }
